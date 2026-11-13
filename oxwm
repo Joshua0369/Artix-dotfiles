@@ -1,63 +1,47 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Installer (Tony Banters) for Artix Linux
+# OXWM Direct Installer (Tony Banters GitHub)
 # ==============================================================================
 
 set -Eeuo pipefail
 
 echo "=================================================="
-echo "    Installing OXWM (Tony Banters)                "
+echo "    Installing OXWM (Directly from GitHub)        "
 echo "=================================================="
 
-# Ensure base dependencies are installed
-echo "==> Installing required dependencies..."
-# Dependencies based on the AUR package and source build requirements
+# 1. Ensure base dependencies are installed
+echo "==> Installing required build dependencies..."
 sudo pacman -S --needed --noconfirm base-devel git zig libx11 libxft freetype2 fontconfig libxinerama
 
-# --- METHOD 1: Install via AUR (Recommended for Artix) ---
-# This is the easiest way as it handles the compilation and desktop entry automatically.
-echo "==> Installing oxwm-git from the AUR..."
+# 2. Clone and Build
+echo "==> Cloning OXWM from Tony's GitHub..."
+TEMP_DIR=$(mktemp -d)
+cd "$TEMP_DIR"
 
-# Check if an AUR helper (yay/paru) is available
-if command -v yay &> /dev/null; then
-    yay -S --noconfirm oxwm-git
-elif command -v paru &> /dev/null; then
-    paru -S --noconfirm oxwm-git
-else
-    echo "[!] No AUR helper found. Building from source manually..."
-    
-    # --- METHOD 2: Build from Source Manually ---
-    # This is the fallback if you don't have yay or paru installed.
-    TEMP_DIR=$(mktemp -d)
-    cd "$TEMP_DIR"
-    
-    # Clone Tony's repository
-    git clone https://github.com/tonybanters/oxwm.git
-    cd oxwm
-    
-    # Build and install (using ReleaseSmall for smaller binary size)
-    echo "==> Compiling OXWM..."
-    zig build -Doptimize=ReleaseSmall --prefix /usr
-    
-    # Cleanup
-    cd ~
-    rm -rf "$TEMP_DIR"
-fi
+# Clone the repository
+git clone https://github.com/tonybanters/oxwm.git
+cd oxwm
 
-# --- Post-Installation Setup ---
+# 3. Compile and Install
+echo "==> Compiling OXWM using Zig (ReleaseFast)..."
+# We use ReleaseFast for the best performance
+zig build -Doptimize=ReleaseFast --prefix /usr
+
+# 4. Cleanup
+echo "==> Cleaning up temporary build files..."
+cd ~
+rm -rf "$TEMP_DIR"
+
+# 5. Setup default configuration folder
 echo "==> Setting up OXWM configuration..."
-
-# Create the config directory if it doesn't exist
 mkdir -p ~/.config/oxwm
 
-# Generate the default config if it's missing
-# The oxwm binary creates a default config on first run, but we can trigger it manually
-if [ ! -f ~/.config/oxwm/config.lua ]; then
-    echo "    Generating default configuration..."
-    # The oxwm binary should be in /usr/bin/oxwm after the build/install
-    if command -v oxwm &> /dev/null; then
-        oxwm --init || echo "    [!] Could not auto-generate config, will be created on first launch."
-    fi
+# Generate the default config if the binary supports it
+if command -v oxwm &> /dev/null; then
+    oxwm --init || echo "    [!] Could not auto-generate config."
+else
+    echo "    [!] ERROR: OXWM binary not found in PATH after compilation."
+    exit 1
 fi
 
 echo ""
