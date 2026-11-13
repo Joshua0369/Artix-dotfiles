@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Direct Installer (Auto-fixes Zig Version & Lua Download Bug)
+# OXWM Direct Installer (System Lua Bypass for Zig TLS Bug)
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -9,9 +9,9 @@ echo "=================================================="
 echo "    Installing OXWM (Directly from GitHub)        "
 echo "=================================================="
 
-# 1. Ensure base dependencies are installed
-echo "==> Installing required build dependencies..."
-sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama wget tar
+# 1. Install dependencies, INCLUDING system Lua
+echo "==> Installing required build dependencies (and Lua)..."
+sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama wget tar lua
 
 # 2. Setup a temporary workspace
 TEMP_DIR=$(mktemp -d)
@@ -23,38 +23,38 @@ wget -q https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
 tar -xf zig-linux-x86_64-0.14.0.tar.xz
 ZIG_BIN="$TEMP_DIR/zig-linux-x86_64-0.14.0/zig"
 
-# 4. Pre-download Lua to bypass Zig's network bug
-echo "==> Pre-downloading Lua 5.4.8 to prevent Zig network errors..."
-LUA_URL="https://www.lua.org/ftp/lua-5.4.8.tar.gz"
-wget -q "$LUA_URL" -O lua-5.4.8.tar.gz
-
-# Zig requires the file to be cached with a specific hash name
-# The hash for Lua 5.4.8 is: 4f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae
-LUA_HASH="12204f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae"
-ZIG_CACHE_DIR="$HOME/.cache/zig/p"
-
-mkdir -p "$ZIG_CACHE_DIR"
-cp lua-5.4.8.tar.gz "$ZIG_CACHE_DIR/$LUA_HASH"
-
-# 5. Clone and Build
+# 4. Clone OXWM
 echo "==> Cloning OXWM from Tony's GitHub..."
 git clone https://github.com/tonybanters/oxwm.git
 cd oxwm
 
+# 5. PATCH THE BUILD SYSTEM
+# Zig's downloader is broken (TlsInitializationFailed). 
+# We will remove the external Lua dependency and use the system one instead.
+echo "==> Patching build files to use system Lua..."
+
+# Remove the dependency from build.zig.zon
+sed -i '/lua-5.4.8.tar.gz/,+2d' build.zig.zon
+
+# Find the line in build.zig that links the downloaded Lua and change it to link the system Lua
+# (The exact line varies by version, but it usually looks like exe.linkLibrary(lua_dep) or similar)
+# We will replace the lua dependency inclusion with a system link.
+sed -i 's/const lua = b.dependency("lua", .{.*});//' build.zig
+sed -i 's/exe.linkLibrary(lua.artifact("lua"));/exe.linkSystemLibrary("lua5.4");/' build.zig
+
+# 6. Compile and Install
 echo "==> Compiling OXWM using Zig (ReleaseFast)..."
-# Use the downloaded Zig binary
 "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr
 
-# 6. Cleanup
+# 7. Cleanup
 echo "==> Cleaning up temporary build files..."
 cd ~
 rm -rf "$TEMP_DIR"
 
-# 7. Setup default configuration folder
+# 8. Setup default configuration folder
 echo "==> Setting up OXWM configuration..."
 mkdir -p ~/.config/oxwm
 
-# Generate the default config if the binary supports it
 if command -v oxwm &> /dev/null; then
     oxwm --init 2>/dev/null || echo "    [!] Default config will be created on first launch."
 else
