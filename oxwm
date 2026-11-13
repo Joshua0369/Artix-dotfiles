@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Direct Installer (Cache Setup to Bypass Zig TLS Bug)
+# OXWM Direct Installer (v6 - Cache Fix)
 # ==============================================================================
 
 set -Eeuo pipefail
 
 echo "=================================================="
-echo "    Installing OXWM (Directly from GitHub)        "
+echo "    [v6] Installing OXWM (Directly from GitHub)   "
 echo "=================================================="
 
 # 1. Ensure base dependencies are installed
-echo "==> Installing required build dependencies..."
+echo "==> [v6] Installing required build dependencies..."
 sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama wget tar
 
 # 2. Setup a temporary workspace
@@ -18,13 +18,13 @@ TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
 # 3. Download the specific Zig version
-echo "==> Downloading compatible Zig compiler (0.14.0)..."
+echo "==> [v6] Downloading compatible Zig compiler (0.14.0)..."
 wget -q https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
 tar -xf zig-linux-x86_64-0.14.0.tar.xz
 ZIG_BIN="$TEMP_DIR/zig-linux-x86_64-0.14.0/zig"
 
 # 4. Manually download Lua and setup Zig cache
-echo "==> Pre-downloading Lua 5.4.8 and setting up Zig cache..."
+echo "==> [v6] Pre-downloading Lua 5.4.8 and setting up Zig cache..."
 LUA_URL="https://www.lua.org/ftp/lua-5.4.8.tar.gz"
 wget -q "$LUA_URL" -O lua-5.4.8.tar.gz
 
@@ -40,22 +40,22 @@ cp lua-5.4.8.tar.gz "$ZIG_CACHE_DIR/$LUA_HASH"
 echo "12204f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae" > "$ZIG_CACHE_DIR/$LUA_HASH.hash"
 
 # 5. Clone OXWM
-echo "==> Cloning OXWM from Tony's GitHub..."
+echo "==> [v6] Cloning OXWM from Tony's GitHub..."
 git clone https://github.com/tonybanters/oxwm.git
 cd oxwm
 
 # 6. Compile and Install
-echo "==> Compiling OXWM using Zig (ReleaseFast)..."
+echo "==> [v6] Compiling OXWM using Zig (ReleaseFast)..."
 # We tell Zig to fetch dependencies, which will now hit the cache instantly
 "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr
 
 # 7. Cleanup
-echo "==> Cleaning up temporary build files..."
+echo "==> [v6] Cleaning up temporary build files..."
 cd ~
 rm -rf "$TEMP_DIR"
 
 # 8. Setup default configuration folder
-echo "==> Setting up OXWM configuration..."
+echo "==> [v6] Setting up OXWM configuration..."
 mkdir -p ~/.config/oxwm
 
 if command -v oxwm &> /dev/null; then
@@ -67,7 +67,7 @@ fi
 
 echo ""
 echo "=================================================="
-echo "  OXWM Installed Successfully!                    "
+echo "  [v6] OXWM Installed Successfully!               "
 echo "=================================================="
 echo ""
 echo "  To start OXWM, add 'exec oxwm' to your ~/.xinitrc"
