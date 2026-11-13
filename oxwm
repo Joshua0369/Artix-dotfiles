@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Direct Installer (Auto-fixes Zig Version Mismatch)
+# OXWM Direct Installer (Auto-fixes Zig Version & Lua Download Bug)
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -17,27 +17,40 @@ sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontc
 TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
-# 3. Download the specific Zig version that works with Tony's build script
+# 3. Download the specific Zig version
 echo "==> Downloading compatible Zig compiler (0.14.0)..."
 wget -q https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
 tar -xf zig-linux-x86_64-0.14.0.tar.xz
 ZIG_BIN="$TEMP_DIR/zig-linux-x86_64-0.14.0/zig"
 
-# 4. Clone and Build
+# 4. Pre-download Lua to bypass Zig's network bug
+echo "==> Pre-downloading Lua 5.4.8 to prevent Zig network errors..."
+LUA_URL="https://www.lua.org/ftp/lua-5.4.8.tar.gz"
+wget -q "$LUA_URL" -O lua-5.4.8.tar.gz
+
+# Zig requires the file to be cached with a specific hash name
+# The hash for Lua 5.4.8 is: 4f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae
+LUA_HASH="12204f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae"
+ZIG_CACHE_DIR="$HOME/.cache/zig/p"
+
+mkdir -p "$ZIG_CACHE_DIR"
+cp lua-5.4.8.tar.gz "$ZIG_CACHE_DIR/$LUA_HASH"
+
+# 5. Clone and Build
 echo "==> Cloning OXWM from Tony's GitHub..."
 git clone https://github.com/tonybanters/oxwm.git
 cd oxwm
 
 echo "==> Compiling OXWM using Zig (ReleaseFast)..."
-# Use the downloaded Zig binary instead of the system one
+# Use the downloaded Zig binary
 "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr
 
-# 5. Cleanup
+# 6. Cleanup
 echo "==> Cleaning up temporary build files..."
 cd ~
 rm -rf "$TEMP_DIR"
 
-# 6. Setup default configuration folder
+# 7. Setup default configuration folder
 echo "==> Setting up OXWM configuration..."
 mkdir -p ~/.config/oxwm
 
