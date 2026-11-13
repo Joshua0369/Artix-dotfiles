@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Direct Installer (v7 - Local Path Patch)
+# OXWM Direct Installer (v8 - Network Retry & Error Checking)
 # ==============================================================================
 
 set -Eeuo pipefail
 
 echo "=================================================="
-echo "    [v7] Installing OXWM (Directly from GitHub)   "
+echo "    [v8] Installing OXWM (Directly from GitHub)   "
 echo "=================================================="
 
 # 1. Ensure base dependencies are installed
-echo "==> [v7] Installing required build dependencies..."
+echo "==> [v8] Installing required build dependencies..."
 sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama wget tar
 
 # 2. Setup a temporary workspace
@@ -18,39 +18,51 @@ TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
 # 3. Download the specific Zig version
-echo "==> [v7] Downloading compatible Zig compiler (0.14.0)..."
-wget -q https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
+echo "==> [v8] Downloading compatible Zig compiler (0.14.0)..."
+# Added --tries=3 and --timeout to prevent silent failures
+if ! wget -q --tries=3 --timeout=15 https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz; then
+    echo "    [!] ERROR: Failed to download Zig compiler. Check your internet connection."
+    exit 1
+fi
 tar -xf zig-linux-x86_64-0.14.0.tar.xz
 ZIG_BIN="$TEMP_DIR/zig-linux-x86_64-0.14.0/zig"
 
 # 4. Pre-download Lua
-echo "==> [v7] Pre-downloading Lua 5.4.8..."
+echo "==> [v8] Pre-downloading Lua 5.4.8..."
 LUA_URL="https://www.lua.org/ftp/lua-5.4.8.tar.gz"
-wget -q "$LUA_URL" -O lua-5.4.8.tar.gz
+if ! wget -q --tries=3 --timeout=15 "$LUA_URL" -O lua-5.4.8.tar.gz; then
+    echo "    [!] ERROR: Failed to download Lua. Check your internet connection."
+    exit 1
+fi
 
 # 5. Clone OXWM
-echo "==> [v7] Cloning OXWM from Tony's GitHub..."
-git clone https://github.com/tonybanters/oxwm.git
+echo "==> [v8] Cloning OXWM from Tony's GitHub..."
+if ! git clone https://github.com/tonybanters/oxwm.git; then
+    echo "    [!] ERROR: Failed to clone OXWM repository."
+    exit 1
+fi
 cd oxwm
 
 # 6. PATCH THE BUILD SYSTEM (Point to local file)
-echo "==> [v7] Patching build.zig.zon to use local Lua file..."
-# The original line looks like: .url = "https://www.lua.org/ftp/lua-5.4.8.tar.gz",
-# We replace the URL with the absolute path to our downloaded file.
+echo "==> [v8] Patching build.zig.zon to use local Lua file..."
 LUA_PATH="$TEMP_DIR/lua-5.4.8.tar.gz"
 sed -i "s|.url = \"https://www.lua.org/ftp/lua-5.4.8.tar.gz\",|.path = \"$LUA_PATH\",|" build.zig.zon
 
 # 7. Compile and Install
-echo "==> [v7] Compiling OXWM using Zig (ReleaseFast)..."
-"$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr
+echo "==> [v8] Compiling OXWM using Zig (ReleaseFast)..."
+# If the compile fails, we want to know
+if ! "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr; then
+    echo "    [!] ERROR: Compilation failed."
+    exit 1
+fi
 
 # 8. Cleanup
-echo "==> [v7] Cleaning up temporary build files..."
+echo "==> [v8] Cleaning up temporary build files..."
 cd ~
 rm -rf "$TEMP_DIR"
 
 # 9. Setup default configuration folder
-echo "==> [v7] Setting up OXWM configuration..."
+echo "==> [v8] Setting up OXWM configuration..."
 mkdir -p ~/.config/oxwm
 
 if command -v oxwm &> /dev/null; then
@@ -62,7 +74,7 @@ fi
 
 echo ""
 echo "=================================================="
-echo "  [v7] OXWM Installed Successfully!               "
+echo "  [v8] OXWM Installed Successfully!               "
 echo "=================================================="
 echo ""
 echo "  To start OXWM, add 'exec oxwm' to your ~/.xinitrc"
