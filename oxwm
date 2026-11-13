@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# OXWM Installer (Tony Banters) for Artix Linux
+# ==============================================================================
+
+set -Eeuo pipefail
+
+echo "=================================================="
+echo "    Installing OXWM (Tony Banters)                "
+echo "=================================================="
+
+# Ensure base dependencies are installed
+echo "==> Installing required dependencies..."
+# Dependencies based on the AUR package and source build requirements
+sudo pacman -S --needed --noconfirm base-devel git zig libx11 libxft freetype2 fontconfig libxinerama
+
+# --- METHOD 1: Install via AUR (Recommended for Artix) ---
+# This is the easiest way as it handles the compilation and desktop entry automatically.
+echo "==> Installing oxwm-git from the AUR..."
+
+# Check if an AUR helper (yay/paru) is available
+if command -v yay &> /dev/null; then
+    yay -S --noconfirm oxwm-git
+elif command -v paru &> /dev/null; then
+    paru -S --noconfirm oxwm-git
+else
+    echo "[!] No AUR helper found. Building from source manually..."
+    
+    # --- METHOD 2: Build from Source Manually ---
+    # This is the fallback if you don't have yay or paru installed.
+    TEMP_DIR=$(mktemp -d)
+    cd "$TEMP_DIR"
+    
+    # Clone Tony's repository
+    git clone https://github.com/tonybanters/oxwm.git
+    cd oxwm
+    
+    # Build and install (using ReleaseSmall for smaller binary size)
+    echo "==> Compiling OXWM..."
+    zig build -Doptimize=ReleaseSmall --prefix /usr
+    
+    # Cleanup
+    cd ~
+    rm -rf "$TEMP_DIR"
+fi
+
+# --- Post-Installation Setup ---
+echo "==> Setting up OXWM configuration..."
+
+# Create the config directory if it doesn't exist
+mkdir -p ~/.config/oxwm
+
+# Generate the default config if it's missing
+# The oxwm binary creates a default config on first run, but we can trigger it manually
+if [ ! -f ~/.config/oxwm/config.lua ]; then
+    echo "    Generating default configuration..."
+    # The oxwm binary should be in /usr/bin/oxwm after the build/install
+    if command -v oxwm &> /dev/null; then
+        oxwm --init || echo "    [!] Could not auto-generate config, will be created on first launch."
+    fi
+fi
+
+echo ""
+echo "=================================================="
+echo "  OXWM Installed Successfully!                    "
+echo "=================================================="
+echo ""
+echo "  To start OXWM, add 'exec oxwm' to your ~/.xinitrc"
+echo "  and run 'startx', or select it from your display manager."
+echo ""
+echo "  Your configuration is at: ~/.config/oxwm/config.lua"
+echo "  Reload config with: Super + Shift + R"
+echo "=================================================="
