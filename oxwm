@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Direct Installer (Tony Banters GitHub)
+# OXWM Direct Installer (Auto-fixes Zig Version Mismatch)
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -11,34 +11,39 @@ echo "=================================================="
 
 # 1. Ensure base dependencies are installed
 echo "==> Installing required build dependencies..."
-sudo pacman -S --needed --noconfirm base-devel git zig libx11 libxft freetype2 fontconfig libxinerama
+sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama wget tar
 
-# 2. Clone and Build
-echo "==> Cloning OXWM from Tony's GitHub..."
+# 2. Setup a temporary workspace
 TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
-# Clone the repository
+# 3. Download the specific Zig version that works with Tony's build script
+echo "==> Downloading compatible Zig compiler (0.14.0)..."
+wget -q https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
+tar -xf zig-linux-x86_64-0.14.0.tar.xz
+ZIG_BIN="$TEMP_DIR/zig-linux-x86_64-0.14.0/zig"
+
+# 4. Clone and Build
+echo "==> Cloning OXWM from Tony's GitHub..."
 git clone https://github.com/tonybanters/oxwm.git
 cd oxwm
 
-# 3. Compile and Install
 echo "==> Compiling OXWM using Zig (ReleaseFast)..."
-# We use ReleaseFast for the best performance
-zig build -Doptimize=ReleaseFast --prefix /usr
+# Use the downloaded Zig binary instead of the system one
+"$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr
 
-# 4. Cleanup
+# 5. Cleanup
 echo "==> Cleaning up temporary build files..."
 cd ~
 rm -rf "$TEMP_DIR"
 
-# 5. Setup default configuration folder
+# 6. Setup default configuration folder
 echo "==> Setting up OXWM configuration..."
 mkdir -p ~/.config/oxwm
 
 # Generate the default config if the binary supports it
 if command -v oxwm &> /dev/null; then
-    oxwm --init || echo "    [!] Could not auto-generate config."
+    oxwm --init 2>/dev/null || echo "    [!] Default config will be created on first launch."
 else
     echo "    [!] ERROR: OXWM binary not found in PATH after compilation."
     exit 1
