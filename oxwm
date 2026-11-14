@@ -1,47 +1,71 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Installer (v19 - AUR Package Method)
+# OXWM Installer (v20 - Exact Zig 0.16.0 & Local Lua)
 # ==============================================================================
 
 set -Eeuo pipefail
 
 echo "=================================================="
-echo "    [v19] Installing OXWM (via AUR Package)       "
+echo "    [v20] Installing OXWM (Fixed Zig Version)     "
 echo "=================================================="
 
 # 1. Install base dependencies
-echo "==> [v19] Installing required dependencies..."
-sudo pacman -S --needed --noconfirm base-devel git
+echo "==> [v20] Installing required dependencies..."
+sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama wget tar
 
 # 2. Setup temporary workspace
 TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
-# 3. Clone the AUR package
-echo "==> [v19] Downloading AUR package for oxwm-git..."
-if ! git clone https://aur.archlinux.org/oxwm-git.git; then
-    echo "    [!] ERROR: Failed to clone AUR repository."
+# 3. Download the EXACT Zig version required (0.16.0)
+echo "==> [v20] Downloading Zig 0.16.0 compiler..."
+if ! wget -q --tries=3 --timeout=15 https://ziglang.org/download/0.16.0/zig-linux-x86_64-0.16.0.tar.xz; then
+    echo "    [!] ERROR: Failed to download Zig 0.16.0."
+    exit 1
+fi
+tar -xf zig-linux-x86_64-0.16.0.tar.xz
+ZIG_BIN="$TEMP_DIR/zig-linux-x86_64-0.16.0/zig"
+
+# 4. Download Lua from reliable mirror
+echo "==> [v20] Downloading Lua 5.4.8 from mirror..."
+LUA_MIRROR="http://mirror.techfak.net/ubuntu/pool/main/l/lua5.4/lua5.4_5.4.8.orig.tar.gz"
+if ! wget -q --tries=3 --timeout=20 "$LUA_MIRROR" -O "$TEMP_DIR/lua-5.4.8.tar.gz"; then
+    echo "    [!] ERROR: Failed to download Lua."
     exit 1
 fi
 
-cd oxwm-git
+# 5. Clone OXWM
+echo "==> [v20] Cloning OXWM from Tony's GitHub..."
+if ! git clone https://github.com/tonybanters/oxwm.git; then
+    echo "    [!] ERROR: Failed to clone OXWM repository."
+    exit 1
+fi
+cd oxwm
 
-# 4. Build and install using makepkg
-echo "==> [v19] Compiling and installing OXWM via makepkg..."
-if ! makepkg -si --noconfirm; then
+# 6. Patch build.zig.zon to use the local Lua file (relative path)
+echo "==> [v20] Patching build.zig.zon to use local Lua file..."
+# Copy the Lua tarball into the oxwm directory
+cp "$TEMP_DIR/lua-5.4.8.tar.gz" .
+# Replace the URL with a relative path
+sed -i "s|.url = \"https://www.lua.org/ftp/lua-5.4.8.tar.gz\",|.path = \"./lua-5.4.8.tar.gz\",|" build.zig.zon
+# Remove the .hash line to avoid a conflict with the local path
+sed -i "/\.hash = /d" build.zig.zon
+
+# 7. Compile using Zig 0.16.0
+echo "==> [v20] Compiling OXWM using Zig 0.16.0..."
+if ! "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr; then
     echo "    [!] ERROR: Compilation failed."
     exit 1
 fi
 
-# 5. Cleanup
-echo "==> [v19] Cleaning up..."
+# 8. Cleanup
+echo "==> [v20] Cleaning up..."
 cd ~
 rm -rf "$TEMP_DIR"
 
-# 6. Setup configuration
-echo "==> [v19] Setting up OXWM configuration..."
+# 9. Setup configuration
+echo "==> [v20] Setting up OXWM configuration..."
 mkdir -p ~/.config/oxwm
-
 if command -v oxwm &> /dev/null; then
     oxwm --init 2>/dev/null || echo "    [!] Default config will be created on first launch."
 else
@@ -51,12 +75,5 @@ fi
 
 echo ""
 echo "=================================================="
-echo "  [v19] OXWM Installed Successfully!              "
-echo "=================================================="
-echo ""
-echo "  To start OXWM, add 'exec oxwm' to your ~/.xinitrc"
-echo "  and run 'startx', or select it from your display manager."
-echo ""
-echo "  Your configuration is at: ~/.config/oxwm/config.lua"
-echo "  Reload config with: Super + Shift + R"
+echo "  [v20] OXWM Installed Successfully!              "
 echo "=================================================="
