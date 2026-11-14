@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# vxwm-dotfiles install script for Artix Linux with dinit
+# Based on the original Arch manual install, adapted for dinit & Artix packages.
+
+set -euo pipefail
+
+REPO_URL="https://github.com/ceapeapea/vxwm-dotfiles.git"
+DOTFILES_DIR="$HOME/dotfiles"
+
+echo "==> This script assumes: Artix Linux (dinit), X11, regular user with sudo."
+
+# 1. Clone repo
+if [[ ! -d "$DOTFILES_DIR" ]]; then
+    git clone "$REPO_URL" "$DOTFILES_DIR"
+fi
+cd "$DOTFILES_DIR"
+
+# 2. Install packages
+#    Artix provides most Arch packages, but services are dinit packages.
+#    Some Arch-specific service packages (e.g. networkmanager) have -dinit variants.
+
+echo "==> Installing base X11 & build dependencies..."
+sudo pacman -S --needed --noconfirm \
+    base-devel git pkgconf python-pip rsync make \
+    xorg xorg-xinit xorg-xrdb xorg-xsetroot xorg-xset xorg-xprop \
+    xorg-setxkbmap xorg-xrandr xdotool \
+    libx11 libxft libxinerama \
+    libxcomposite libxdamage libxfixes libxrandr libdrm
+
+echo "==> Installing desktop stack (Artix repos)..."
+# NOTE: On Artix, service packages are named *-dinit.
+# We install the main packages first; service packages separately below.
+sudo pacman -S --needed --noconfirm \
+    kitty feh dmenu clipmenu stalonetray picom dunst libnotify \
+    thunar gvfs exo tumbler sxiv imagemagick xclip xsel swappy micro \
+    brightnessctl slock \
+    network-manager-applet \
+    bluez bluez-utils blueman \
+    libpulse pipewire pipewire-pulse pipewire-alsa pipewire-jack wireplumber \
+    pavucontrol alsa-utils python-gobject gtk3 \
+    udisks2 ntfs-3g xdg-user-dirs xdg-utils \
+    ttf-dejavu ttf-liberation noto-fonts \
+    otf-atkinsonhyperlegiblemono-nerd \
+    ttf-jetbrains-mono-nerd ttf-firacode-nerd ttf-hack-nerd
+
+echo "==> Installing pywal (Artix/Arch repo)..."
+sudo pacman -S --needed --noconfirm python-pywal
+
+echo "==> Installing dinit service packages..."
+# These provide dinit service files for the services the rice needs.
+sudo pacman -S --needed --noconfirm \
+    networkmanager-dinit \
+    bluez-dinit \
+    pipewire-dinit \
+    pipewire-pulse-dinit \
+    wireplumber-dinit
+
+# 3. Build vxwm
+echo "==> Building vxwm..."
+cd "$DOTFILES_DIR/vxwm"
+make clean && make
+sudo make install
+mkdir -p "$HOME/.local/bin"
+cp -f ./vxwm "$HOME/.local/bin/vxwm"
+chmod +x "$HOME/.local/bin/vxwm"
+
+# keep source tree for config edits
+mkdir -p "$HOME/vxwm"
+rsync -a --delete --exclude='*.o' --exclude='vxwm' --exclude='.git' \
+    "$DOTFILES_DIR/vxwm/" "$HOME/vxwm/"
+
+# 4. Install configs & scripts
+echo "==> Installing configs..."
+mkdir -p "$HOME/.local/bin" "$HOME/.config"
+mkdir -p "$HOME/Pictures/Wallpapers" "$HOME/Pictures/Screenshots" "$HOME/.cache/clipmenu"
+mkdir -p "$HOME/.config"/{kitty,picom,dunst,wal/templates,gtk-3.0,rice,fontconfig/conf.d}
+
+cp "$DOTFILES_DIR/.local/bin/"* "$HOME/.local/bin/" && chmod +x "$HOME/.local/bin/"*
+
+cp "$DOTFILES_DIR/.config/kitty/kitty.conf" "$HOME/.config/kitty/"
+cp "$DOTFILES_DIR/.config/picom/picom.conf" "$HOME/.config/picom/"
+cp "$DOTFILES_DIR/.config/dunst/dunstrc" "$HOME/.config/dunst/dunstrc.base"
+cp "$DOTFILES_DIR/.config/dunst/dunstrc" "$HOME/.config/dunst/dunstrc"
+cp "$DOTFILES_DIR/.config/wal/templates/"* "$HOME/.config/wal/templates/" 2>/dev/null || true
+cp "$DOTFILES_DIR/.config/gtk-3.0/"* "$HOME/.config/gtk-3.0/"
+cp "$DOTFILES_DIR/.config/rice/"* "$HOME/.config/rice/" 2>/dev/null || true
+cp "$DOTFILES_DIR/.config/fontconfig/conf.d/"* "$HOME/.config/fontconfig/conf.d/" 2>/dev/null || true
+
+cp "$DOTFILES_DIR/.xinitrc" "$HOME/.xinitrc" && chmod +x "$HOME/.xinitrc"
+cp "$DOTFILES_DIR/.stalonetrayrc" "$HOME/.stalonetrayrc"
+
+# Shell configs: back up existing then copy
+[[ -f "$HOME/.bashrc" ]] && cp "$HOME/.bashrc" "$HOME/.bashrc.bak"
+cp "$DOTFILES_DIR/.bashrc" "$HOME/.bashrc"
+# If you use zsh, uncomment:
+# sudo pacman -S --needed zsh
+# [[ -f "$HOME/.zshrc" ]] && cp "$HOME/.zshrc" "$HOME/.zshrc.bak"
+# cp "$DOTFILES_DIR/.zshrc" "$HOME/.zshrc"
+
+cp -a "$DOTFILES_DIR/Pictures/Wallpapers/." "$HOME/Pictures/Wallpapers/" 2>/dev/null || true
+xdg-mime default thunar.desktop inode/directory 2>/dev/null || true
+
+# Ensure ~/.local/bin is in PATH (append to ~/.profile if missing)
+if ! grep -q 'local/bin' "$HOME/.profile" 2>/dev/null; then
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.profile"
+fi
+
+# 5. Enable services with dinit
+echo "==> Enabling dinit services..."
+# System services (root)
+sudo dinitctl enable networkmanager
+sudo dinitctl enable bluetooth
+
+# User services: dinit user instance is typically managed by turnstile/dinit-user-spawn.
+# On Artix with dinit, enable user services via dinitctl as your user.
+# If turnstile is installed and running, these commands work.
+dinitctl enable pipewire
+dinitctl enable pipewire-pulse
+dinitctl enable wireplumber
+
+# 6. Final steps
+echo "==> Updating user dirs..."
+xdg-user-dirs-update
+
+echo "==> Done."
+echo "Next:"
+echo "  1. Run: setwal ~/Pictures/Wallpapers/<your-image>"
+echo "  2. Start X with: startx"
+echo "  3. If bar font or colors are off, run: vxbuild && restart X"
+echo "  4. Check services: dinitctl list"
