@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Artix Linux (dinit) installer for edr3x/.dotfiles
+# This script installs dependencies and uses GNU Stow to deploy configs.
+set -euo pipefail
+
+DOTFILES_DIR="$HOME/.dotfiles"
+
+# --- 1. Package Installation (Artix/dinit compatible) ---
+echo ">>> Installing packages from the official Artix repositories..."
+# We use pacman directly. Artix repos have most of these.
+# 'clipmenu' is excluded as it is systemd-dependent. 'lxappearance' is optional.
+sudo pacman -S --needed --noconfirm \
+    awesome alacritty fish neofetch neovim picom btop rofi \
+    starship tmux stow git-delta \
+    ttf-fira-code ttf-iosevka-nerd \
+    lxappearance \
+    xorg-xrandr xorg-xsetroot \
+    dmenu \
+    network-manager-applet \
+    polkit-gnome \
+    gnome-keyring \
+    pipewire pipewire-pulse wireplumber \
+    xdg-desktop-portal xdg-desktop-portal-gtk
+
+# Note: We are NOT installing clipmenu as it requires systemd.
+# You may want an alternative clipboard manager, or none at all.
+
+# --- 2. Clone the Dotfiles ---
+if [[ ! -d "$DOTFILES_DIR" ]]; then
+    echo ">>> Cloning dotfiles repository..."
+    git clone https://github.com/edr3x/.dotfiles.git "$DOTFILES_DIR"
+else
+    echo ">>> Dotfiles directory already exists at $DOTFILES_DIR. Skipping clone."
+    echo "    (If you want a fresh copy, remove the directory and re-run.)"
+fi
+
+# --- 3. Backup Existing Configs (Safety) ---
+echo ">>> Backing up existing configurations to ~/.config-backup-$(date +%s)..."
+BACKUP_DIR="$HOME/.config-backup-$(date +%s)"
+mkdir -p "$BACKUP_DIR"
+
+# These are the directories stow will target. We move them aside to avoid conflicts.
+for dir in alacritty awesome fish flameshot ghostty nvim picom rofi starship tmux yazi zsh; do
+    if [[ -e "$HOME/.config/$dir" ]]; then
+        echo "    Backing up ~/.config/$dir"
+        mv "$HOME/.config/$dir" "$BACKUP_DIR/"
+    fi
+done
+# Also handle top-level files/dirs like .local/scripts and .zshrc
+if [[ -e "$HOME/.local/scripts" ]]; then
+    mv "$HOME/.local/scripts" "$BACKUP_DIR/" 2>/dev/null || true
+fi
+if [[ -e "$HOME/.zshrc" ]]; then
+    mv "$HOME/.zshrc" "$BACKUP_DIR/"
+fi
+echo ">>> Backup complete: $BACKUP_DIR"
+
+# --- 4. Deploy with GNU Stow ---
+cd "$DOTFILES_DIR"
+echo ">>> Stowing all configuration packages..."
+
+# The repository structure is a set of top-level directories (alacritty, awesome, nvim, etc.)
+# A wildcard stow will attempt to link everything. This is what the README suggests.
+# We'll exclude the 'nix' directory as it's for NixOS and not relevant here.
+# We also exclude 'gitconf' as it may contain machine-specific git settings.
+# You can enable/disable packages by modifying the list below.
+PACKAGES="alacritty awesome cht-sh fish flameshot ghostty neofetch nvim picom presenterm rofi scripts starship tmux yazi zsh"
+
+for pkg in $PACKAGES; do
+    if [[ -d "$DOTFILES_DIR/$pkg" ]]; then
+        echo "    Stowing $pkg..."
+        stow -v -R "$pkg"
+    else
+        echo "    Package directory '$pkg' not found. Skipping."
+    fi
+done
+
+# --- 5. Post-Installation for Artix/dinit ---
+echo ""
+echo "✅ Dotfiles have been stowed."
+echo ""
+echo "⚠️  CRITICAL: Manual steps required for Artix/dinit."
+echo "-----------------------------------------------"
+echo "1. SHELL: The fish shell is installed but not set as default. Run:"
+echo "   chsh -s /usr/bin/fish"
+echo ""
+echo "2. AWESOME SESSION: The dotfiles assume a systemd session. On Artix/dinit,"
+echo "   you should launch Awesome from a TTY using 'startx' or a display manager"
+echo "   that supports non-systemd setups (e.g., lightdm, ly, or greetd)."
+echo "   Ensure your ~/.xinitrc contains:"
+echo "   exec awesome"
+echo ""
+echo "3. CLIPBOARD MANAGER: The original repo used 'clipmenu', which requires systemd."
+echo "   You must find an alternative (e.g., 'greenclip' or 'cliphist' with wl-clipboard"
+echo "   if you ever use Wayland) or run without one."
+echo ""
+echo "4. TOUCHPAD (Optional): Create /etc/X11/xorg.conf.d/30-touchpad.conf with the"
+echo "   content from the README if you need tap-to-click."
+echo ""
+echo "5. D-BUS & POLKIT: Ensure your dinit user session starts the D-Bus session bus."
+echo "   Many applications (like polkit agents) require it. Check Artix wiki for"
+echo "   'dbus-dinit' user service setup."
+echo ""
+echo "6. LOGOUT: The Awesome config may call 'loginctl' or 'systemctl'. On dinit,"
+echo "   you may need to bind a key to simply 'pkill awesome' or 'dinitctl stop'."
+echo "-----------------------------------------------"
