@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Direct Installer (v14 - Dummy Dependency)
+# OXWM Direct Installer (v15 - Fixed Dummy Syntax)
 # ==============================================================================
 
 set -Eeuo pipefail
 
 echo "=================================================="
-echo "    [v14] Installing OXWM (Directly from GitHub)  "
+echo "    [v15] Installing OXWM (Directly from GitHub)  "
 echo "=================================================="
 
 # 1. Ensure base dependencies are installed
-echo "==> [v14] Installing required build dependencies..."
+echo "==> [v15] Installing required build dependencies..."
 sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama wget tar lua
 
 # 2. Setup a temporary workspace
@@ -18,7 +18,7 @@ TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
 # 3. Download the specific Zig version
-echo "==> [v14] Downloading compatible Zig compiler (0.14.0)..."
+echo "==> [v15] Downloading compatible Zig compiler (0.14.0)..."
 if ! wget -q --tries=3 --timeout=15 https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz; then
     echo "    [!] ERROR: Failed to download Zig compiler."
     exit 1
@@ -27,7 +27,8 @@ tar -xf zig-linux-x86_64-0.14.0.tar.xz
 ZIG_BIN="$TEMP_DIR/zig-linux-x86_64-0.14.0/zig"
 
 # 4. Clone OXWM
-echo "==> [v14] Cloning OXWM from Tony's GitHub..."
+echo "==> [v15] Cloning OXWM from Tony's GitHub..."
+rm -rf oxwm
 if ! git clone https://github.com/tonybanters/oxwm.git; then
     echo "    [!] ERROR: Failed to clone OXWM repository."
     exit 1
@@ -35,32 +36,32 @@ fi
 cd oxwm
 
 # 5. PATCH THE BUILD SYSTEM
-echo "==> [v14] Patching build files..."
+echo "==> [v15] Patching build files..."
 
 # Remove the lua URL block from build.zig.zon
 sed -i '/\.lua = \./,/},/d' build.zig.zon
 
-# Replace the dependency declaration with a dummy struct so Zig doesn't crash
-# This mimics the API of a dependency so the rest of the file works.
-sed -i 's/const lua_dep = b.dependency("lua", \.{.*});/const lua_dep = struct { fn path(_: anytype, _: []const u8) []const u8 { return "\/usr\/include\/lua5.4"; } }; const dummy_lua = lua_dep;/' build.zig
+# Replace the dependency declaration with a dummy struct that accepts ANY arguments
+# This prevents Zig from crashing on the argument count mismatch.
+sed -i 's/const lua_dep = b.dependency("lua", \.{.*});/const lua_dep = struct { fn path(_: anytype, _: anytype) []const u8 { return "\/usr\/include\/lua5.4"; } };/' build.zig
 
 # Change the linkLibrary command to link the system library
 sed -i 's/exe.linkLibrary(lua_dep.artifact("lua"));/exe.linkSystemLibrary("lua5.4");/' build.zig
 
 # 6. Compile and Install
-echo "==> [v14] Compiling OXWM using Zig (ReleaseFast)..."
+echo "==> [v15] Compiling OXWM using Zig (ReleaseFast)..."
 if ! "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr; then
     echo "    [!] ERROR: Compilation failed."
     exit 1
 fi
 
 # 7. Cleanup
-echo "==> [v14] Cleaning up temporary build files..."
+echo "==> [v15] Cleaning up temporary build files..."
 cd ~
 rm -rf "$TEMP_DIR"
 
 # 8. Setup default configuration folder
-echo "==> [v14] Setting up OXWM configuration..."
+echo "==> [v15] Setting up OXWM configuration..."
 mkdir -p ~/.config/oxwm
 
 if command -v oxwm &> /dev/null; then
@@ -72,5 +73,12 @@ fi
 
 echo ""
 echo "=================================================="
-echo "  [v14] OXWM Installed Successfully!              "
+echo "  [v15] OXWM Installed Successfully!              "
+echo "=================================================="
+echo ""
+echo "  To start OXWM, add 'exec oxwm' to your ~/.xinitrc"
+echo "  and run 'startx', or select it from your display manager."
+echo ""
+echo "  Your configuration is at: ~/.config/oxwm/config.lua"
+echo "  Reload config with: Super + Shift + R"
 echo "=================================================="
