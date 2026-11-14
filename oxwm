@@ -1,72 +1,70 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Installer (v21 - Correct Zig Filename & Local Lua)
+# OXWM Installer (v22 - File URL & Local Lua)
 # ==============================================================================
 
 set -Eeuo pipefail
 
 echo "=================================================="
-echo "    [v21] Installing OXWM (Fixed Zig Download)    "
+echo "    [v22] Installing OXWM (File URL & Local Lua)  "
 echo "=================================================="
 
 # 1. Install base dependencies
-echo "==> [v21] Installing required dependencies..."
+echo "==> [v22] Installing required dependencies..."
 sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama wget tar
 
 # 2. Setup temporary workspace
 TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
-# 3. Download the EXACT Zig version required (0.16.0) using the correct filename
-echo "==> [v21] Downloading Zig 0.16.0 compiler..."
+# 3. Download the EXACT Zig version required (0.16.0)
+echo "==> [v22] Downloading Zig 0.16.0 compiler..."
 ZIG_URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
 if ! wget -q --tries=3 --timeout=15 "$ZIG_URL"; then
     echo "    [!] ERROR: Failed to download Zig 0.16.0."
     exit 1
 fi
-# Extract the tarball (folder name will be zig-x86_64-linux-0.16.0)
 tar -xf zig-x86_64-linux-0.16.0.tar.xz
 ZIG_BIN="$TEMP_DIR/zig-x86_64-linux-0.16.0/zig"
 
-# 4. Download Lua from reliable mirror
-echo "==> [v21] Downloading Lua 5.4.8 from mirror..."
+# 4. Download Lua from a reliable mirror
+echo "==> [v22] Downloading Lua 5.4.8 from mirror..."
 LUA_MIRROR="http://mirror.techfak.net/ubuntu/pool/main/l/lua5.4/lua5.4_5.4.8.orig.tar.gz"
-if ! wget -q --tries=3 --timeout=20 "$LUA_MIRROR" -O "$TEMP_DIR/lua-5.4.8.tar.gz"; then
+LUA_PATH="$TEMP_DIR/lua-5.4.8.tar.gz"
+if ! wget -q --tries=3 --timeout=20 "$LUA_MIRROR" -O "$LUA_PATH"; then
     echo "    [!] ERROR: Failed to download Lua."
     exit 1
 fi
 
 # 5. Clone OXWM
-echo "==> [v21] Cloning OXWM from Tony's GitHub..."
+echo "==> [v22] Cloning OXWM from Tony's GitHub..."
 if ! git clone https://github.com/tonybanters/oxwm.git; then
     echo "    [!] ERROR: Failed to clone OXWM repository."
     exit 1
 fi
 cd oxwm
 
-# 6. Patch build.zig.zon to use the local Lua file (relative path)
-echo "==> [v21] Patching build.zig.zon to use local Lua file..."
-# Copy the Lua tarball into the oxwm directory
-cp "$TEMP_DIR/lua-5.4.8.tar.gz" .
-# Replace the URL with a relative path
-sed -i "s|.url = \"https://www.lua.org/ftp/lua-5.4.8.tar.gz\",|.path = \"./lua-5.4.8.tar.gz\",|" build.zig.zon
-# Remove the .hash line to avoid a conflict with the local path
+# 6. PATCH THE BUILD SYSTEM (Use file:// URL for local tarball)
+echo "==> [v22] Patching build.zig.zon to use local Lua file via file:// URL..."
+# Replace the original URL with the local file path using file://
+sed -i "s|.url = \"https://www.lua.org/ftp/lua-5.4.8.tar.gz\",|.url = \"file://$LUA_PATH\",|" build.zig.zon
+# Remove the .hash line to prevent a hash mismatch error
 sed -i "/\.hash = /d" build.zig.zon
 
 # 7. Compile using Zig 0.16.0
-echo "==> [v21] Compiling OXWM using Zig 0.16.0..."
+echo "==> [v22] Compiling OXWM using Zig 0.16.0..."
 if ! "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr; then
     echo "    [!] ERROR: Compilation failed."
     exit 1
 fi
 
 # 8. Cleanup
-echo "==> [v21] Cleaning up..."
+echo "==> [v22] Cleaning up..."
 cd ~
 rm -rf "$TEMP_DIR"
 
 # 9. Setup configuration
-echo "==> [v21] Setting up OXWM configuration..."
+echo "==> [v22] Setting up OXWM configuration..."
 mkdir -p ~/.config/oxwm
 if command -v oxwm &> /dev/null; then
     oxwm --init 2>/dev/null || echo "    [!] Default config will be created on first launch."
@@ -77,5 +75,5 @@ fi
 
 echo ""
 echo "=================================================="
-echo "  [v21] OXWM Installed Successfully!              "
+echo "  [v22] OXWM Installed Successfully!              "
 echo "=================================================="
