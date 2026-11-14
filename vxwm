@@ -1,22 +1,88 @@
 #!/usr/bin/env bash
-# vxwm-dotfiles installer V3 (Artix Linux / dinit / X11)
-# Changelog V3:
-#   - REMOVED clipmenu (AUR only) and swappy (Wayland-only) from official repo installs
-#   - turnstiled: enable + verify + instruct user to re-login (per Artix Wiki)
-#   - Soft-fail on desktop/optional package groups (no more set -e abort on one missing pkg)
-#   - User services enabled AFTER re-login, not during install
-#   - Added explicit verification steps at end
+# vxwm-dotfiles installer V4 (Artix Linux / dinit / X11)
+# Changelog V4:
+#   - Idempotent: if vxwm binary + dotfiles already present, skip install
+#   - Only (re)generates ~/.local/share/applications/vxwm.desktop on re-run
+#   - --force flag to override skip and do full reinstall
+#   - Layered soft-fail (no set -e) for all package sections
+#   - Corrected turnstiled workflow (enable, then user re-login)
 
-set -uo pipefail  # NOTE: removed -e; we handle errors manually per-section
+set -uo pipefail
 
 REPO_URL="https://github.com/ceapeapea/vxwm-dotfiles.git"
 DOTFILES_DIR="$HOME/dotfiles"
+BIN_PATH="$HOME/.local/bin/vxwm"
+DESKTOP_DIR="$HOME/.local/share/applications"
+DESKTOP_FILE="$DESKTOP_DIR/vxwm.desktop"
+FORCE=0
 
-echo "==> vxwm-dotfiles installer V3 (Artix Linux / dinit / X11)"
+# Parse args
+for arg in "$@"; do
+    case "$arg" in
+        --force|-f) FORCE=1 ;;
+        *) echo "Unknown arg: $arg"; exit 1 ;;
+    esac
+done
 
 # ─────────────────────────────────────────────────────────────
+# Detect existing install
+# ─────────────────────────────────────────────────────────────
+ALREADY_INSTALLED=0
+if [[ -x "$BIN_PATH" && -d "$DOTFILES_DIR/vxwm" && -f "$HOME/.xinitrc" ]]; then
+    ALREADY_INSTALLED=1
+fi
+
+if [[ "$ALREADY_INSTALLED" -eq 1 && "$FORCE" -eq 0 ]]; then
+    echo "==> vxwm already installed (binary + dotfiles + .xinitrc found)."
+    echo "    Skipping full install. Only refreshing .desktop file."
+    echo "    (Use --force to reinstall everything.)"
+    SKIP_INSTALL=1
+else
+    SKIP_INSTALL=0
+fi
+
+# ─────────────────────────────────────────────────────────────
+# Helper: write .desktop file
+# ─────────────────────────────────────────────────────────────
+write_desktop_file() {
+    mkdir -p "$DESKTOP_DIR"
+    cat > "$DESKTOP_FILE" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=vxwm
+Comment=Lightweight X11 window manager (vxwm-dotfiles)
+Exec=/home/USER/.local/bin/vxwm
+TryExec=/home/USER/.local/bin/vxwm
+Icon=utilities-terminal
+Terminal=false
+Categories=System;WindowManager;
+StartupNotify=false
+X-Dinit-Managed=false
+EOF
+    # Substitute real $HOME (heredoc above is quoted, so no expansion)
+    sed -i "s|/home/USER|$HOME|g" "$DESKTOP_FILE"
+    chmod 644 "$DESKTOP_FILE"
+    echo "    Wrote $DESKTOP_FILE"
+}
+
+# ─────────────────────────────────────────────────────────────
+# Fast path: skip install, only refresh .desktop
+# ─────────────────────────────────────────────────────────────
+if [[ "$SKIP_INSTALL" -eq 1 ]]; then
+    write_desktop_file
+    command -v update-desktop-database >/dev/null 2>&1 && \
+        update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
+    echo ""
+    echo "==> Done (desktop entry refreshed)."
+    exit 0
+fi
+
+# ─────────────────────────────────────────────────────────────
+# Full install path
+# ─────────────────────────────────────────────────────────────
+echo "==> vxwm-dotfiles installer V4 (full install)"
+
 # 1. Clone repo
-# ─────────────────────────────────────────────────────────────
 if [[ ! -d "$DOTFILES_DIR" ]]; then
     echo "==> Cloning dotfiles..."
     git clone "$REPO_URL" "$DOTFILES_DIR" || { echo "!!! git clone failed"; exit 1; }
@@ -25,10 +91,7 @@ else
 fi
 cd "$DOTFILES_DIR" || exit 1
 
-# ─────────────────────────────────────────────────────────────
-# 2. Core X11 + build deps (hard requirement — abort if fails)
-#    Install xorg-server directly, NOT the xorg group (avoids tearfree conflict)
-# ─────────────────────────────────────────────────────────────
+# 2. Core X11 + build deps (hard fail)
 echo "==> Installing core X11 + build dependencies..."
 sudo pacman -S --needed --noconfirm \
     base-devel git pkgconf make rsync python-pip \
@@ -40,33 +103,23 @@ sudo pacman -S --needed --noconfirm \
     fontconfig freetype2 \
     || { echo "!!! Core X11 deps failed — aborting"; exit 1; }
 
-# ─────────────────────────────────────────────────────────────
-# 3. Turnstile infrastructure (CRITICAL for user services)
-#    Per Artix Wiki: enable turnstiled, then LOG OUT / LOG IN
-#    Without re-login, turnstile won't spawn user dinit instance.
-#    Ref: https://wiki.artixlinux.org/Main/Turnstile
-# ─────────────────────────────────────────────────────────────
+# 3. Turnstile infrastructure
 echo "==> Installing turnstile + dbus user session..."
 sudo pacman -S --needed --noconfirm \
     turnstile turnstile-dinit dbus-dinit-user \
-    || echo "!!! turnstile install failed — user services won't work"
+    || echo "!!! turnstile install failed"
 
-echo "==> Enabling turnstiled (system service)..."
+echo "==> Enabling turnstiled..."
 sudo dinitctl enable turnstiled 2>&1 || \
-    echo "!!! turnstiled enable failed — will retry instruction at end"
+    echo "!!! turnstiled enable failed — retry after re-login"
 
-# Check if turnstiled is actually present in /run
 if [[ -e /run/turnstiled ]]; then
-    echo "    /run/turnstiled exists — session is managed by turnstile."
+    echo "    /run/turnstiled exists."
 else
-    echo "    /run/turnstiled missing — you MUST log out and back in for this to appear."
+    echo "    /run/turnstiled missing — log out/in required."
 fi
 
-# ─────────────────────────────────────────────────────────────
-# 4. Desktop packages (split: core soft-fail, no AUR-only packages)
-#    clipmenu removed: AUR only, not in official Artix repos 
-#    swappy removed: Wayland-native snapshot tool, not useful for X11 vxwm [citation:5]
-# ─────────────────────────────────────────────────────────────
+# 4. Desktop packages (soft-fail; no AUR-only packages)
 echo "==> Installing desktop packages..."
 sudo pacman -S --needed --noconfirm \
     kitty feh dmenu stalonetray picom dunst libnotify \
@@ -79,49 +132,41 @@ sudo pacman -S --needed --noconfirm \
     udisks2 ntfs-3g xdg-user-dirs xdg-utils \
     ttf-dejavu ttf-liberation noto-fonts \
     python-pywal \
-    || echo "!!! Some desktop packages failed — check output above"
+    || echo "!!! Some desktop packages failed"
 
 echo "==> Installing optional nerd fonts (soft-fail)..."
 sudo pacman -S --needed --noconfirm \
     otf-atkinsonhyperlegiblemono-nerd \
     ttf-jetbrains-mono-nerd ttf-firacode-nerd ttf-hack-nerd \
-    2>/dev/null || echo "    (some nerd fonts unavailable, continuing)"
+    2>/dev/null || echo "    (some nerd fonts unavailable)"
 
-# ─────────────────────────────────────────────────────────────
-# 5. dinit service packages (system-level + user-level)
-#    pipewire-dinit etc. provide USER service files in /etc/dinit.d/user
-# ─────────────────────────────────────────────────────────────
+# 5. dinit service packages
 echo "==> Installing dinit service packages..."
 sudo pacman -S --needed --noconfirm \
     networkmanager-dinit bluez-dinit \
     pipewire-dinit pipewire-pulse-dinit wireplumber-dinit \
     || echo "!!! Some dinit service packages failed"
 
-# ─────────────────────────────────────────────────────────────
 # 6. Build vxwm
-# ─────────────────────────────────────────────────────────────
 echo "==> Building vxwm..."
 cd "$DOTFILES_DIR/vxwm" || exit 1
 make clean && make || { echo "!!! vxwm build failed"; exit 1; }
 sudo make install
-mkdir -p "$HOME/.local/bin"
-cp -f ./vxwm "$HOME/.local/bin/vxwm"
-chmod +x "$HOME/.local/bin/vxwm"
+mkdir -p "$(dirname "$BIN_PATH")"
+cp -f ./vxwm "$BIN_PATH"
+chmod +x "$BIN_PATH"
 
-# Preserve source tree
 mkdir -p "$HOME/vxwm"
 rsync -a --delete --exclude='*.o' --exclude='vxwm' --exclude='.git' \
     "$DOTFILES_DIR/vxwm/" "$HOME/vxwm/"
 
-# ─────────────────────────────────────────────────────────────
 # 7. Install configs
-# ─────────────────────────────────────────────────────────────
 echo "==> Installing configs..."
-mkdir -p "$HOME/.local/bin" "$HOME/.config"
+mkdir -p "$(dirname "$BIN_PATH")" "$HOME/.config"
 mkdir -p "$HOME/Pictures/Wallpapers" "$HOME/Pictures/Screenshots" "$HOME/.cache/clipmenu"
 mkdir -p "$HOME/.config"/{kitty,picom,dunst,wal/templates,gtk-3.0,rice,fontconfig/conf.d}
 
-cp "$DOTFILES_DIR/.local/bin/"* "$HOME/.local/bin/" && chmod +x "$HOME/.local/bin/"*
+cp "$DOTFILES_DIR/.local/bin/"* "$(dirname "$BIN_PATH")/" && chmod +x "$(dirname "$BIN_PATH")/"*
 cp "$DOTFILES_DIR/.config/kitty/kitty.conf" "$HOME/.config/kitty/"
 cp "$DOTFILES_DIR/.config/picom/picom.conf" "$HOME/.config/picom/"
 cp "$DOTFILES_DIR/.config/dunst/dunstrc" "$HOME/.config/dunst/dunstrc.base"
@@ -144,45 +189,33 @@ if ! grep -q 'local/bin' "$HOME/.profile" 2>/dev/null; then
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.profile"
 fi
 
-# ─────────────────────────────────────────────────────────────
-# 8. Enable SYSTEM services only (user services deferred to post-relogin)
-#    Per Artix forum: do NOT use sudo for user services 
-# ─────────────────────────────────────────────────────────────
+# 8. System services only
 echo "==> Enabling system services..."
 sudo dinitctl enable networkmanager 2>/dev/null || echo "    networkmanager enable failed"
 sudo dinitctl enable bluetooth 2>/dev/null || echo "    bluetooth enable failed"
 
-# ─────────────────────────────────────────────────────────────
-# 9. Final instructions
-# ─────────────────────────────────────────────────────────────
+# 9. Write .desktop file
+write_desktop_file
+command -v update-desktop-database >/dev/null 2>&1 && \
+    update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
+
+# 10. Final
 xdg-user-dirs-update 2>/dev/null || true
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
-echo "  V3 INSTALL COMPLETE — ACTION REQUIRED"
+echo "  V4 INSTALL COMPLETE — ACTION REQUIRED"
 echo "════════════════════════════════════════════════════════════"
 echo ""
-echo "  STEP 1: LOG OUT and LOG BACK IN (or reboot)."
-echo "          Turnstile needs a fresh PAM session to spawn"
-echo "          your dinit user instance. [citation:1][citation:6]"
-echo ""
-echo "  STEP 2: After re-login, verify turnstile is active:"
-echo "          ls -d /run/turnstiled"
-echo ""
-echo "  STEP 3: Enable user audio services (as YOUR user, no sudo):"
+echo "  STEP 1: LOG OUT and LOG BACK IN (turnstile needs fresh session)."
+echo "  STEP 2: Verify: ls -d /run/turnstiled"
+echo "  STEP 3: Enable user audio services (no sudo):"
 echo "          dinitctl enable pipewire"
 echo "          dinitctl enable pipewire-pulse"
 echo "          dinitctl enable wireplumber"
+echo "  STEP 4: Verify: dinitctl list  (look for {+} on pipewire, etc.)"
+echo "  STEP 5: setwal ~/Pictures/Wallpapers/<image> && startx"
 echo ""
-echo "  STEP 4: Verify user services are running:"
-echo "          dinitctl list"
-echo "          (look for dbus, pipewire, pipewire-pulse, wireplumber"
-echo "           marked with {+}) "
-echo ""
-echo "  STEP 5: Set wallpaper and start X:"
-echo "          setwal ~/Pictures/Wallpapers/<image>"
-echo "          startx"
-echo ""
-echo "  NOTE: clipmenu is AUR-only (not installed by this script)."
-echo "        If you need it: yay -S clipmenu"
+echo "  Re-running this script will skip install and only refresh"
+echo "  ~/.local/share/applications/vxwm.desktop"
 echo "════════════════════════════════════════════════════════════"
