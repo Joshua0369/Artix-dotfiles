@@ -1,67 +1,47 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Direct Installer (v15 - Fixed Dummy Syntax)
+# OXWM Installer (v16 - AUR makepkg Method)
 # ==============================================================================
 
 set -Eeuo pipefail
 
 echo "=================================================="
-echo "    [v15] Installing OXWM (Directly from GitHub)  "
+echo "    [v16] Installing OXWM (via AUR Package)       "
 echo "=================================================="
 
-# 1. Ensure base dependencies are installed
-echo "==> [v15] Installing required build dependencies..."
-sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama wget tar lua
+# 1. Install base dependencies and build tools
+echo "==> [v16] Installing required dependencies..."
+sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama zig lua
 
 # 2. Setup a temporary workspace
 TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
-# 3. Download the specific Zig version
-echo "==> [v15] Downloading compatible Zig compiler (0.14.0)..."
-if ! wget -q --tries=3 --timeout=15 https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz; then
-    echo "    [!] ERROR: Failed to download Zig compiler."
+# 3. Clone the AUR package (This handles the complex build logic for you)
+echo "==> [v16] Downloading AUR package for oxwm-git..."
+# We use the official AUR git URL
+if ! git clone https://aur.archlinux.org/oxwm-git.git; then
+    echo "    [!] ERROR: Failed to clone AUR repository."
     exit 1
 fi
-tar -xf zig-linux-x86_64-0.14.0.tar.xz
-ZIG_BIN="$TEMP_DIR/zig-linux-x86_64-0.14.0/zig"
 
-# 4. Clone OXWM
-echo "==> [v15] Cloning OXWM from Tony's GitHub..."
-rm -rf oxwm
-if ! git clone https://github.com/tonybanters/oxwm.git; then
-    echo "    [!] ERROR: Failed to clone OXWM repository."
-    exit 1
-fi
-cd oxwm
+cd oxwm-git
 
-# 5. PATCH THE BUILD SYSTEM
-echo "==> [v15] Patching build files..."
-
-# Remove the lua URL block from build.zig.zon
-sed -i '/\.lua = \./,/},/d' build.zig.zon
-
-# Replace the dependency declaration with a dummy struct that accepts ANY arguments
-# This prevents Zig from crashing on the argument count mismatch.
-sed -i 's/const lua_dep = b.dependency("lua", \.{.*});/const lua_dep = struct { fn path(_: anytype, _: anytype) []const u8 { return "\/usr\/include\/lua5.4"; } };/' build.zig
-
-# Change the linkLibrary command to link the system library
-sed -i 's/exe.linkLibrary(lua_dep.artifact("lua"));/exe.linkSystemLibrary("lua5.4");/' build.zig
-
-# 6. Compile and Install
-echo "==> [v15] Compiling OXWM using Zig (ReleaseFast)..."
-if ! "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr; then
+# 4. Build and install using makepkg
+echo "==> [v16] Compiling and installing OXWM via makepkg..."
+# -s installs missing dependencies, -i installs the package, --noconfirm skips prompts
+if ! makepkg -si --noconfirm; then
     echo "    [!] ERROR: Compilation failed."
     exit 1
 fi
 
-# 7. Cleanup
-echo "==> [v15] Cleaning up temporary build files..."
+# 5. Cleanup
+echo "==> [v16] Cleaning up temporary build files..."
 cd ~
 rm -rf "$TEMP_DIR"
 
-# 8. Setup default configuration folder
-echo "==> [v15] Setting up OXWM configuration..."
+# 6. Setup default configuration folder
+echo "==> [v16] Setting up OXWM configuration..."
 mkdir -p ~/.config/oxwm
 
 if command -v oxwm &> /dev/null; then
@@ -73,7 +53,7 @@ fi
 
 echo ""
 echo "=================================================="
-echo "  [v15] OXWM Installed Successfully!              "
+echo "  [v16] OXWM Installed Successfully!              "
 echo "=================================================="
 echo ""
 echo "  To start OXWM, add 'exec oxwm' to your ~/.xinitrc"
