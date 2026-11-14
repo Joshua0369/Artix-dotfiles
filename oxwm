@@ -17,7 +17,7 @@ else
     
     # Install base dependencies (Added xorg-xauth to fix ly error)
     echo "==> [v30] Installing required dependencies..."
-    sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama libinput systemd-libs xorg-xauth wget tar
+    sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama libinput systemd-libs xorg-xauth xorg-server xorg-xinit wget tar
 
     # Setup workspace in HOME directory
     TEMP_DIR="$HOME/oxwm-build"
