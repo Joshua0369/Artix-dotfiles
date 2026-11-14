@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Installer (v31 - Full Setup + Xorg/Ly Permissions Fix)
+# OXWM Installer (v32 - Custom Dotfiles Config)
 # ==============================================================================
 
 set -Eeuo pipefail
 
 echo "=================================================="
-echo "    [v31] Installing OXWM (Full Setup)            "
+echo "    [v32] Installing OXWM (Custom Config)         "
 echo "=================================================="
 
 # 1. Check if oxwm is already installed
 if command -v oxwm &> /dev/null; then
-    echo "==> [v31] OXWM is already installed! Skipping build process..."
+    echo "==> [v32] OXWM is already installed! Skipping build process..."
 else
-    echo "==> [v31] OXWM not found. Starting installation process..."
+    echo "==> [v32] OXWM not found. Starting installation process..."
     
-    # Install base dependencies (Includes Xorg, Xauth, and libinput)
-    echo "==> [v31] Installing required dependencies..."
+    # Install base dependencies
+    echo "==> [v32] Installing required dependencies..."
     sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama libinput systemd-libs xorg-xauth xorg-server xorg-xinit wget tar
 
     # Setup workspace in HOME directory
@@ -26,7 +26,7 @@ else
     cd "$TEMP_DIR"
 
     # Download Zig
-    echo "==> [v31] Downloading Zig 0.16.0 compiler..."
+    echo "==> [v32] Downloading Zig 0.16.0 compiler..."
     ZIG_URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
     if ! wget --tries=3 --timeout=60 "$ZIG_URL"; then
         echo "    [!] ERROR: Failed to download Zig."
@@ -42,7 +42,7 @@ else
     fi
 
     # Download Lua
-    echo "==> [v31] Downloading Lua 5.4.8 from mirror..."
+    echo "==> [v32] Downloading Lua 5.4.8 from mirror..."
     LUA_MIRROR="http://mirror.techfak.net/ubuntu/pool/main/l/lua5.4/lua5.4_5.4.8.orig.tar.gz"
     LUA_PATH="$TEMP_DIR/lua-5.4.8.tar.gz"
     if ! wget -q --tries=3 --timeout=20 "$LUA_MIRROR" -O "$LUA_PATH"; then
@@ -51,7 +51,7 @@ else
     fi
 
     # Clone OXWM
-    echo "==> [v31] Cloning OXWM from Tony's GitHub..."
+    echo "==> [v32] Cloning OXWM from Tony's GitHub..."
     if ! git clone https://github.com/tonybanters/oxwm.git; then
         echo "    [!] ERROR: Failed to clone OXWM repository."
         exit 1
@@ -59,34 +59,31 @@ else
     cd oxwm
 
     # Patch build.zig.zon
-    echo "==> [v31] Patching build.zig.zon to use local Lua file and correct hash..."
+    echo "==> [v32] Patching build.zig.zon to use local Lua file and correct hash..."
     sed -i "s|https://www.lua.org/ftp/lua-5.4.8.tar.gz|file://$LUA_PATH|" build.zig.zon
     sed -i "s|12204f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae|N-V-__8AAKEzFAAA695b9LXBhUSVK5MAV_VKSm1mEj3Acbze|" build.zig.zon
 
     # Compile
-    echo "==> [v31] Compiling and installing OXWM using Zig 0.16.0..."
+    echo "==> [v32] Compiling and installing OXWM using Zig 0.16.0..."
     if ! sudo "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr; then
         echo "    [!] ERROR: Compilation failed."
         exit 1
     fi
 
     # Cleanup
-    echo "==> [v31] Cleaning up..."
+    echo "==> [v32] Cleaning up..."
     cd ~
     sudo rm -rf "$TEMP_DIR"
 fi
 
 # 2. Fix Xorg and Ly Permissions
-echo "==> [v31] Applying Xorg and Ly permission fixes..."
-# Allow Xorg to run for any user (fixes "Only console users allowed" error)
+echo "==> [v32] Applying Xorg and Ly permission fixes..."
 sudo sh -c 'printf "allowed_users = anybody\nneeds_root_rights = yes\n" > /etc/X11/Xwrapper.config'
-
-# Free up TTY1 for Ly (fixes TTY conflict on dinit)
 sudo mkdir -p /etc/dinit.d/config
 sudo sh -c 'echo "ACTIVE_CONSOLES=\"/dev/tty[2-6]\"" > /etc/dinit.d/config/console.conf'
 
 # 3. Setup Ly Xsession File
-echo "==> [v31] Setting up Ly session entry..."
+echo "==> [v32] Setting up Ly session entry..."
 sudo mkdir -p /usr/share/xsessions
 sudo tee /usr/share/xsessions/oxwm.desktop > /dev/null << 'EOF'
 [Desktop Entry]
@@ -96,29 +93,30 @@ Exec=oxwm
 Type=Application
 EOF
 
-# 4. Setup Configuration
-echo "==> [v31] Setting up OXWM configuration..."
+# 4. Setup Custom Configuration from GitHub
+echo "==> [v32] Downloading custom config.lua from your GitHub..."
 mkdir -p ~/.config/oxwm
-if command -v oxwm &> /dev/null; then
-    # Only run init if the config doesn't exist yet
+CONFIG_URL="https://raw.githubusercontent.com/Joshua0369/Artix-dotfiles/main/config/oxwm/config.lua"
+
+if ! wget -q --tries=3 --timeout=20 "$CONFIG_URL" -O ~/.config/oxwm/config.lua; then
+    echo "    [!] WARNING: Failed to download custom config. Falling back to default."
     if [ ! -f ~/.config/oxwm/config.lua ]; then
         oxwm --init 2>/dev/null || echo "    [!] Default config will be created on first launch."
     fi
 else
-    echo "    [!] ERROR: OXWM binary not found."
-    exit 1
+    echo "    -> Custom config installed successfully."
 fi
 
 # 5. Restart Ly to apply changes
-echo "==> [v31] Restarting Ly display manager..."
+echo "==> [v32] Restarting Ly display manager..."
 sudo dinitctl restart ly || echo "    [!] Could not restart Ly automatically. Please reboot."
 
 echo ""
 echo "=================================================="
-echo "  [v31] OXWM Installed Successfully!              "
+echo "  [v32] OXWM Installed Successfully!              "
 echo "=================================================="
 echo ""
-echo "  Xorg permissions and TTY config fixed."
+echo "  Your custom dotfiles config has been applied."
 echo "  You can now select 'OXWM' from the Ly login menu."
 echo ""
 echo "  Your configuration is at: ~/.config/oxwm/config.lua"
