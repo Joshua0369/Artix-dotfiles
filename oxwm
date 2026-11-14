@@ -1,59 +1,66 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Installer (v16 - AUR makepkg Method)
+# OXWM Installer (v17 - Uses Zig 0.14.0 to avoid b.args error)
 # ==============================================================================
 
 set -Eeuo pipefail
 
 echo "=================================================="
-echo "    [v16] Installing OXWM (via AUR Package)       "
+echo "    [v17] Installing OXWM (Zig 0.14.0 Compatibility)"
 echo "=================================================="
 
-# 1. Install base dependencies and build tools
-echo "==> [v16] Installing required dependencies..."
-sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama zig lua
+# 1. Install base dependencies
+echo "==> [v17] Installing required dependencies..."
+sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama wget tar
 
-# 2. Setup a temporary workspace
+# 2. Setup temporary workspace
 TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
-# 3. Clone the AUR package (This handles the complex build logic for you)
-echo "==> [v16] Downloading AUR package for oxwm-git..."
-# We use the official AUR git URL
-if ! git clone https://aur.archlinux.org/oxwm-git.git; then
-    echo "    [!] ERROR: Failed to clone AUR repository."
+# 3. Download the specific Zig version (0.14.0) that still has b.args
+echo "==> [v17] Downloading compatible Zig compiler (0.14.0)..."
+if ! wget -q --tries=3 --timeout=15 https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz; then
+    echo "    [!] ERROR: Failed to download Zig compiler."
     exit 1
 fi
+tar -xf zig-linux-x86_64-0.14.0.tar.xz
+ZIG_BIN="$TEMP_DIR/zig-linux-x86_64-0.14.0/zig"
 
-cd oxwm-git
+# 4. Clone OXWM
+echo "==> [v17] Cloning OXWM from Tony's GitHub..."
+if ! git clone https://github.com/tonybanters/oxwm.git; then
+    echo "    [!] ERROR: Failed to clone OXWM repository."
+    exit 1
+fi
+cd oxwm
 
-# 4. Build and install using makepkg
-echo "==> [v16] Compiling and installing OXWM via makepkg..."
-# -s installs missing dependencies, -i installs the package, --noconfirm skips prompts
-if ! makepkg -si --noconfirm; then
+# 5. Build using the older Zig compiler
+echo "==> [v17] Compiling OXWM using Zig 0.14.0 (ReleaseFast)..."
+# We use the downloaded Zig binary directly, ignoring the system's newer version
+if ! "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr; then
     echo "    [!] ERROR: Compilation failed."
     exit 1
 fi
 
-# 5. Cleanup
-echo "==> [v16] Cleaning up temporary build files..."
+# 6. Cleanup
+echo "==> [v17] Cleaning up temporary build files..."
 cd ~
 rm -rf "$TEMP_DIR"
 
-# 6. Setup default configuration folder
-echo "==> [v16] Setting up OXWM configuration..."
+# 7. Setup configuration
+echo "==> [v17] Setting up OXWM configuration..."
 mkdir -p ~/.config/oxwm
 
 if command -v oxwm &> /dev/null; then
     oxwm --init 2>/dev/null || echo "    [!] Default config will be created on first launch."
 else
-    echo "    [!] ERROR: OXWM binary not found in PATH after compilation."
+    echo "    [!] ERROR: OXWM binary not found."
     exit 1
 fi
 
 echo ""
 echo "=================================================="
-echo "  [v16] OXWM Installed Successfully!              "
+echo "  [v17] OXWM Installed Successfully!              "
 echo "=================================================="
 echo ""
 echo "  To start OXWM, add 'exec oxwm' to your ~/.xinitrc"
