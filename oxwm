@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Installer (v26 - Final Hash Replacement)
+# OXWM Installer (v27 - libinput & systemd-libs Fix)
 # ==============================================================================
 
 set -Eeuo pipefail
 
 echo "=================================================="
-echo "    [v26] Installing OXWM (Hash Replacement)      "
+echo "    [v27] Installing OXWM (libinput Fix)          "
 echo "=================================================="
 
-# 1. Install base dependencies
-echo "==> [v26] Installing required dependencies..."
-sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama wget tar
+# 1. Install base dependencies (ADDED libinput and systemd-libs)
+echo "==> [v27] Installing required dependencies..."
+sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama libinput systemd-libs wget tar
 
 # 2. Setup workspace in HOME directory
 TEMP_DIR="$HOME/oxwm-build"
@@ -20,7 +20,7 @@ mkdir -p "$TEMP_DIR"
 cd "$TEMP_DIR"
 
 # 3. Download Zig
-echo "==> [v26] Downloading Zig 0.16.0 compiler..."
+echo "==> [v27] Downloading Zig 0.16.0 compiler..."
 ZIG_URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
 if ! wget --tries=3 --timeout=60 "$ZIG_URL"; then
     echo "    [!] ERROR: Failed to download Zig."
@@ -36,7 +36,7 @@ if [ ! -f "$ZIG_BIN" ]; then
 fi
 
 # 4. Download Lua
-echo "==> [v26] Downloading Lua 5.4.8 from mirror..."
+echo "==> [v27] Downloading Lua 5.4.8 from mirror..."
 LUA_MIRROR="http://mirror.techfak.net/ubuntu/pool/main/l/lua5.4/lua5.4_5.4.8.orig.tar.gz"
 LUA_PATH="$TEMP_DIR/lua-5.4.8.tar.gz"
 if ! wget -q --tries=3 --timeout=20 "$LUA_MIRROR" -O "$LUA_PATH"; then
@@ -45,7 +45,7 @@ if ! wget -q --tries=3 --timeout=20 "$LUA_MIRROR" -O "$LUA_PATH"; then
 fi
 
 # 5. Clone OXWM
-echo "==> [v26] Cloning OXWM from Tony's GitHub..."
+echo "==> [v27] Cloning OXWM from Tony's GitHub..."
 if ! git clone https://github.com/tonybanters/oxwm.git; then
     echo "    [!] ERROR: Failed to clone OXWM repository."
     exit 1
@@ -53,29 +53,24 @@ fi
 cd oxwm
 
 # 6. Patch build.zig.zon
-echo "==> [v26] Patching build.zig.zon to use local Lua file and correct hash..."
-# Replace the URL with the local file path
+echo "==> [v27] Patching build.zig.zon to use local Lua file and correct hash..."
 sed -i "s|https://www.lua.org/ftp/lua-5.4.8.tar.gz|file://$LUA_PATH|" build.zig.zon
-
-# Replace the original hash with the hash for the Ubuntu mirror tarball
-# The original hash is: 12204f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae
-# We replace it with the hash Zig provided in the previous error
 sed -i "s|12204f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae|N-V-__8AAKEzFAAA695b9LXBhUSVK5MAV_VKSm1mEj3Acbze|" build.zig.zon
 
 # 7. Compile
-echo "==> [v26] Compiling OXWM using Zig 0.16.0..."
+echo "==> [v27] Compiling OXWM using Zig 0.16.0..."
 if ! "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr; then
     echo "    [!] ERROR: Compilation failed."
     exit 1
 fi
 
 # 8. Cleanup
-echo "==> [v26] Cleaning up..."
+echo "==> [v27] Cleaning up..."
 cd ~
 rm -rf "$TEMP_DIR"
 
 # 9. Setup configuration
-echo "==> [v26] Setting up OXWM configuration..."
+echo "==> [v27] Setting up OXWM configuration..."
 mkdir -p ~/.config/oxwm
 if command -v oxwm &> /dev/null; then
     oxwm --init 2>/dev/null || echo "    [!] Default config will be created on first launch."
@@ -86,5 +81,12 @@ fi
 
 echo ""
 echo "=================================================="
-echo "  [v26] OXWM Installed Successfully!              "
+echo "  [v27] OXWM Installed Successfully!              "
+echo "=================================================="
+echo ""
+echo "  To start OXWM, add 'exec oxwm' to your ~/.xinitrc"
+echo "  and run 'startx', or select it from your display manager."
+echo ""
+echo "  Your configuration is at: ~/.config/oxwm/config.lua"
+echo "  Reload config with: Super + Shift + R"
 echo "=================================================="
