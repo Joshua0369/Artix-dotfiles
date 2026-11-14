@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Installer (v29 - Idempotent + Ly Session Setup)
+# OXWM Installer (v30 - Idempotent + Ly Setup + Xauth Fix)
 # ==============================================================================
 
 set -Eeuo pipefail
 
 echo "=================================================="
-echo "    [v29] Installing OXWM (Idempotent & Ly Setup) "
+echo "    [v30] Installing OXWM (Full Setup)            "
 echo "=================================================="
 
 # 1. Check if oxwm is already installed
 if command -v oxwm &> /dev/null; then
-    echo "==> [v29] OXWM is already installed! Skipping build process..."
+    echo "==> [v30] OXWM is already installed! Skipping build process..."
 else
-    echo "==> [v29] OXWM not found. Starting installation process..."
+    echo "==> [v30] OXWM not found. Starting installation process..."
     
-    # Install base dependencies
-    echo "==> [v29] Installing required dependencies..."
-    sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama libinput systemd-libs wget tar
+    # Install base dependencies (Added xorg-xauth to fix ly error)
+    echo "==> [v30] Installing required dependencies..."
+    sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama libinput systemd-libs xorg-xauth wget tar
 
     # Setup workspace in HOME directory
     TEMP_DIR="$HOME/oxwm-build"
@@ -26,7 +26,7 @@ else
     cd "$TEMP_DIR"
 
     # Download Zig
-    echo "==> [v29] Downloading Zig 0.16.0 compiler..."
+    echo "==> [v30] Downloading Zig 0.16.0 compiler..."
     ZIG_URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
     if ! wget --tries=3 --timeout=60 "$ZIG_URL"; then
         echo "    [!] ERROR: Failed to download Zig."
@@ -42,7 +42,7 @@ else
     fi
 
     # Download Lua
-    echo "==> [v29] Downloading Lua 5.4.8 from mirror..."
+    echo "==> [v30] Downloading Lua 5.4.8 from mirror..."
     LUA_MIRROR="http://mirror.techfak.net/ubuntu/pool/main/l/lua5.4/lua5.4_5.4.8.orig.tar.gz"
     LUA_PATH="$TEMP_DIR/lua-5.4.8.tar.gz"
     if ! wget -q --tries=3 --timeout=20 "$LUA_MIRROR" -O "$LUA_PATH"; then
@@ -51,7 +51,7 @@ else
     fi
 
     # Clone OXWM
-    echo "==> [v29] Cloning OXWM from Tony's GitHub..."
+    echo "==> [v30] Cloning OXWM from Tony's GitHub..."
     if ! git clone https://github.com/tonybanters/oxwm.git; then
         echo "    [!] ERROR: Failed to clone OXWM repository."
         exit 1
@@ -59,25 +59,25 @@ else
     cd oxwm
 
     # Patch build.zig.zon
-    echo "==> [v29] Patching build.zig.zon to use local Lua file and correct hash..."
+    echo "==> [v30] Patching build.zig.zon to use local Lua file and correct hash..."
     sed -i "s|https://www.lua.org/ftp/lua-5.4.8.tar.gz|file://$LUA_PATH|" build.zig.zon
     sed -i "s|12204f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae|N-V-__8AAKEzFAAA695b9LXBhUSVK5MAV_VKSm1mEj3Acbze|" build.zig.zon
 
     # Compile
-    echo "==> [v29] Compiling and installing OXWM using Zig 0.16.0..."
+    echo "==> [v30] Compiling and installing OXWM using Zig 0.16.0..."
     if ! sudo "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr; then
         echo "    [!] ERROR: Compilation failed."
         exit 1
     fi
 
     # Cleanup
-    echo "==> [v29] Cleaning up..."
+    echo "==> [v30] Cleaning up..."
     cd ~
     sudo rm -rf "$TEMP_DIR"
 fi
 
 # 2. Setup Ly Xsession File
-echo "==> [v29] Setting up Ly session entry..."
+echo "==> [v30] Setting up Ly session entry..."
 sudo mkdir -p /usr/share/xsessions
 sudo tee /usr/share/xsessions/oxwm.desktop > /dev/null << 'EOF'
 [Desktop Entry]
@@ -88,7 +88,7 @@ Type=Application
 EOF
 
 # 3. Setup Configuration
-echo "==> [v29] Setting up OXWM configuration..."
+echo "==> [v30] Setting up OXWM configuration..."
 mkdir -p ~/.config/oxwm
 if command -v oxwm &> /dev/null; then
     # Only run init if the config doesn't exist yet
@@ -102,9 +102,10 @@ fi
 
 echo ""
 echo "=================================================="
-echo "  [v29] OXWM Installed Successfully!              "
+echo "  [v30] OXWM Installed Successfully!              "
 echo "=================================================="
 echo ""
+echo "  Xauth dependency installed to fix Ly errors."
 echo "  You can now select 'OXWM' from the Ly login menu."
 echo ""
 echo "  Your configuration is at: ~/.config/oxwm/config.lua"
