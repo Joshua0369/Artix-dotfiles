@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+#
+# install-dotfiles-artix-dinit.sh
+# Installer for ProDeSquare/dotfiles on Artix Linux with dinit.
+#
+# Usage: sudo ./install-dotfiles-artix-dinit.sh
+#
+# This script will:
+#  - Verify Artix Linux with dinit
+#  - Install required packages (official repos + AUR)
+#  - Enable dinit user services (pipewire, wireplumber, mpd, etc.)
+#  - Clone the dotfiles repo and deploy configurations
+#  - Set zsh as default shell
+#
+
+set -euo pipefail
+
+# --- Configuration ---
+DOTFILES_REPO="https://github.com/ProDeSquare/dotfiles.git"
+DOTFILES_DIR="$HOME/.dotfiles"
+BACKUP_DIR="$HOME/.dotfiles-backup-$(date +%Y%m%d-%H%M%S)"
+TARGET_USER="${SUDO_USER:-$USER}"
+
+# --- Helpers ---
+info()  { echo -e "\033[1;34m[INFO]\033[0m $*"; }
+warn()  { echo -e "\033[1;33m[WARN]\033[0m $*"; }
+error() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; }
+die()   { error "$@"; exit 1; }
+
+# Run command as target user (for user-specific actions)
+as_user() {
+    if [[ "$TARGET_USER" == "root" ]]; then
+        "$@"
+    else
+        sudo -u "$TARGET_USER" "$@"
+    fi
+}
+
+# --- Environment checks ---
+check_environment() {
+    info "Checking environment..."
+
+    # Must be root (or sudo)
+    if [[ $EUID -ne 0 ]]; then
+        die "This script must be run as root (use sudo)."
+    fi
+
+    # Check Artix Linux
+    if ! grep -q '^ID=artix' /etc/os-release 2>/dev/null; then
+        warn "This script is intended for Artix Linux. /etc/os-release does not show ID=artix."
+        read -rp "Continue anyway? [y/N] " ans
+        [[ "$ans" =~ ^[Yy]$ ]] || die "Aborted."
+    fi
+
+    # Check dinit
+    if ! command -v dinitctl &>/dev/null; then
+        die "dinitctl not found. Is dinit installed and running?"
+    fi
+
+    # Check internet
+    if ! ping -c 1 -W 2 archlinux.org &>/dev/null; then
+        die "No internet connection."
+    fi
+
+    info "Environment OK."
+}
+
+# --- Install base dependencies ---
+install_base() {
+    info "Installing base dependencies..."
+    pacman -S --needed --noconfirm base-devel git curl wget
+}
+
+# --- Install AUR helper (yay) if not present ---
+install_aur_helper() {
+    if command -v yay &>/dev/null || command -v paru &>/dev/null; then
+        info "AUR helper already installed."
+        return
+    fi
+
+    info "Installing yay (AUR helper)..."
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    git clone https://aur.archlinux.org/yay-bin.git "$tmpdir/yay-bin"
+    pushd "$tmpdir/yay-bin" >/dev/null
+    as_user makepkg -si --noconfirm
+    popd >/dev/null
+    rm -rf "$tmpdir"
+}
+
+# --- Install official repo packages ---
+install_official_packages() {
+    info "Installing official repository packages..."
+
+    local packages=(
+        # Shell and core
+        zsh
+        # X11 utilities
+        sxhkd
+        dmenu
+        slock
+        # Notifications
+        dunst
+        # File manager / image viewer
+        lf
+        nsxiv
+        # Music
+        mpd
+        ncmpcpp
+        mpv
+        # Email / editor
+        neomutt
+        neovim
+        # Compositor
+        picom
+        # Screenshot
+        scrot
+        # PDF viewer
+        zathura
+        zathura-pdf-mupdf
+        # Audio (PipeWire stack)
+        pipewire
+        pipewire-pulse
+        pipewire-alsa
+        pipewire-jack
+        wireplumber
+        # Dinit service packages for PipeWire
+        pipewire-dinit
+        pipewire-pulse-dinit
+        wireplumber-dinit
+        # Dinit service for MPD
+        mpd-dinit
+        # Other utilities
+        feh
+        # Fonts maybe needed
+        ttf-jetbrains-mono
+        ttf-font-awesome
+    )
+
+    pacman -S --needed --noconfirm "${packages[@]}"
+}
+
+# --- Install AUR packages ---
+install_aur_packages() {
+    info "Installing AUR packages..."
+
+    local aur_packages=(
+        brave-bin
+        spotify-tui
+        ueberzugpp
+        clipmenu
+        batsignal
+    )
+
+    as_user yay -S --needed --noconfirm "${aur_packages[@]}"
+}
+
+# --- Enable dinit user services ---
+enable_user_services() {
+    info "Enabling dinit user services (as $TARGET_USER)..."
+
+    # List of user services to enable
+    local services=(
+        pipewire
+        pipewire-pulse
+        wireplumber
+        mpd
+    )
+
+    for svc in "${services[@]}"; do
+        if as_user dinitctl list | grep -q "^$svc"; then
+            info "Service $svc already exists, enabling..."
+        else
+            info "Enabling service $svc..."
+        fi
+        as_user dinitctl enable "$svc" || warn "Failed to enable $svc (it may already be enabled)."
+    done
+}
+
+# --- Deploy dotfiles ---
+deploy_dotfiles() {
+    info "Deploying dotfiles..."
+
+    # Clone repo as user
+    if [[ -d "$DOTFILES_DIR" ]]; then
+        warn "Dotfiles directory $DOTFILES_DIR already exists. Pulling latest..."
+        as_user git -C "$DOTFILES_DIR" pull
+    else
+        as_user git clone "$DOTFILES_REPO" "$DOTFILES_DIR"
+    fi
+
+    # Backup existing configs
+    mkdir -p "$BACKUP_DIR"
+    local items=(.config .local .zshenv)
+    for item in "${items[@]}"; do
+        if [[ -e "$HOME/$item" ]]; then
+            info "Backing up $HOME/$item to $BACKUP_DIR/"
+            mv "$HOME/$item" "$BACKUP_DIR/"
+        fi
+    done
+
+    # Symlink dotfiles
+    for item in "${items[@]}"; do
+        if [[ -e "$DOTFILES_DIR/$item" ]]; then
+            info "Symlinking $DOTFILES_DIR/$item -> $HOME/$item"
+            ln -s "$DOTFILES_DIR/$item" "$HOME/$item"
+            chown -h "$TARGET_USER:$TARGET_USER" "$HOME/$item"
+        fi
+    done
+
+    # Also symlink .local/bin contents to /usr/local/bin? Optional.
+    # Not necessary; .local/bin is in PATH typically.
+}
+
+# --- Post-install ---
+post_install() {
+    info "Post-installation steps..."
+
+    # Change shell to zsh
+    if [[ "$(getent passwd "$TARGET_USER" | cut -d: -f7)" != "/bin/zsh" ]]; then
+        info "Changing shell to zsh for $TARGET_USER..."
+        chsh -s /bin/zsh "$TARGET_USER"
+    fi
+
+    info "Done. Please review $BACKUP_DIR for any backed-up files."
+    info "You may need to log out and back in for group changes and shell to take effect."
+}
+
+# --- Main ---
+main() {
+    check_environment
+    install_base
+    install_aur_helper
+    install_official_packages
+    install_aur_packages
+    enable_user_services
+    deploy_dotfiles
+    post_install
+
+    info "All done! Enjoy your new dotfiles."
+}
+
+main "$@"
