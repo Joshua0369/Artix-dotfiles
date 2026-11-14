@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Installer (v32 - Custom Dotfiles Config)
+# OXWM Installer (v33 - Alacritty, Rofi & Custom Dotfiles)
 # ==============================================================================
 
 set -Eeuo pipefail
 
 echo "=================================================="
-echo "    [v32] Installing OXWM (Custom Config)         "
+echo "    [v33] Installing OXWM (Full Environment)      "
 echo "=================================================="
 
 # 1. Check if oxwm is already installed
 if command -v oxwm &> /dev/null; then
-    echo "==> [v32] OXWM is already installed! Skipping build process..."
+    echo "==> [v33] OXWM is already installed! Skipping build process..."
 else
-    echo "==> [v32] OXWM not found. Starting installation process..."
+    echo "==> [v33] OXWM not found. Starting installation process..."
     
-    # Install base dependencies
-    echo "==> [v32] Installing required dependencies..."
-    sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama libinput systemd-libs xorg-xauth xorg-server xorg-xinit wget tar
+    # Install base dependencies (Added alacritty and rofi)
+    echo "==> [v33] Installing required dependencies..."
+    sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama libinput systemd-libs xorg-xauth xorg-server xorg-xinit wget tar alacritty rofi
 
     # Setup workspace in HOME directory
     TEMP_DIR="$HOME/oxwm-build"
@@ -26,7 +26,7 @@ else
     cd "$TEMP_DIR"
 
     # Download Zig
-    echo "==> [v32] Downloading Zig 0.16.0 compiler..."
+    echo "==> [v33] Downloading Zig 0.16.0 compiler..."
     ZIG_URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
     if ! wget --tries=3 --timeout=60 "$ZIG_URL"; then
         echo "    [!] ERROR: Failed to download Zig."
@@ -42,7 +42,7 @@ else
     fi
 
     # Download Lua
-    echo "==> [v32] Downloading Lua 5.4.8 from mirror..."
+    echo "==> [v33] Downloading Lua 5.4.8 from mirror..."
     LUA_MIRROR="http://mirror.techfak.net/ubuntu/pool/main/l/lua5.4/lua5.4_5.4.8.orig.tar.gz"
     LUA_PATH="$TEMP_DIR/lua-5.4.8.tar.gz"
     if ! wget -q --tries=3 --timeout=20 "$LUA_MIRROR" -O "$LUA_PATH"; then
@@ -51,7 +51,7 @@ else
     fi
 
     # Clone OXWM
-    echo "==> [v32] Cloning OXWM from Tony's GitHub..."
+    echo "==> [v33] Cloning OXWM from Tony's GitHub..."
     if ! git clone https://github.com/tonybanters/oxwm.git; then
         echo "    [!] ERROR: Failed to clone OXWM repository."
         exit 1
@@ -59,31 +59,31 @@ else
     cd oxwm
 
     # Patch build.zig.zon
-    echo "==> [v32] Patching build.zig.zon to use local Lua file and correct hash..."
+    echo "==> [v33] Patching build.zig.zon to use local Lua file and correct hash..."
     sed -i "s|https://www.lua.org/ftp/lua-5.4.8.tar.gz|file://$LUA_PATH|" build.zig.zon
     sed -i "s|12204f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae|N-V-__8AAKEzFAAA695b9LXBhUSVK5MAV_VKSm1mEj3Acbze|" build.zig.zon
 
     # Compile
-    echo "==> [v32] Compiling and installing OXWM using Zig 0.16.0..."
+    echo "==> [v33] Compiling and installing OXWM using Zig 0.16.0..."
     if ! sudo "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr; then
         echo "    [!] ERROR: Compilation failed."
         exit 1
     fi
 
     # Cleanup
-    echo "==> [v32] Cleaning up..."
+    echo "==> [v33] Cleaning up..."
     cd ~
     sudo rm -rf "$TEMP_DIR"
 fi
 
 # 2. Fix Xorg and Ly Permissions
-echo "==> [v32] Applying Xorg and Ly permission fixes..."
+echo "==> [v33] Applying Xorg and Ly permission fixes..."
 sudo sh -c 'printf "allowed_users = anybody\nneeds_root_rights = yes\n" > /etc/X11/Xwrapper.config'
 sudo mkdir -p /etc/dinit.d/config
 sudo sh -c 'echo "ACTIVE_CONSOLES=\"/dev/tty[2-6]\"" > /etc/dinit.d/config/console.conf'
 
 # 3. Setup Ly Xsession File
-echo "==> [v32] Setting up Ly session entry..."
+echo "==> [v33] Setting up Ly session entry..."
 sudo mkdir -p /usr/share/xsessions
 sudo tee /usr/share/xsessions/oxwm.desktop > /dev/null << 'EOF'
 [Desktop Entry]
@@ -93,32 +93,44 @@ Exec=oxwm
 Type=Application
 EOF
 
-# 4. Setup Custom Configuration from GitHub
-echo "==> [v32] Downloading custom config.lua from your GitHub..."
+# 4. Setup Custom OXWM Config
+echo "==> [v33] Downloading custom config.lua from your GitHub..."
 mkdir -p ~/.config/oxwm
 CONFIG_URL="https://raw.githubusercontent.com/Joshua0369/Artix-dotfiles/main/config/oxwm/config.lua"
-
 if ! wget -q --tries=3 --timeout=20 "$CONFIG_URL" -O ~/.config/oxwm/config.lua; then
     echo "    [!] WARNING: Failed to download custom config. Falling back to default."
     if [ ! -f ~/.config/oxwm/config.lua ]; then
         oxwm --init 2>/dev/null || echo "    [!] Default config will be created on first launch."
     fi
 else
-    echo "    -> Custom config installed successfully."
+    echo "    -> Custom OXWM config installed successfully."
 fi
 
-# 5. Restart Ly to apply changes
-echo "==> [v32] Restarting Ly display manager..."
+# 5. Setup Custom Rofi Config
+echo "==> [v33] Downloading custom rofi configs from your GitHub..."
+mkdir -p ~/.config/rofi
+ROFI_CONFIG_URL="https://raw.githubusercontent.com/Joshua0369/Artix-dotfiles/main/config/rofi/config.rasi"
+ROFI_THEME_URL="https://raw.githubusercontent.com/Joshua0369/Artix-dotfiles/main/config/rofi/tokyo.rasi"
+
+if wget -q --tries=3 --timeout=20 "$ROFI_CONFIG_URL" -O ~/.config/rofi/config.rasi && \
+   wget -q --tries=3 --timeout=20 "$ROFI_THEME_URL" -O ~/.config/rofi/tokyo.rasi; then
+    echo "    -> Custom Rofi configs installed successfully."
+else
+    echo "    [!] WARNING: Failed to download Rofi configs. Check your internet."
+fi
+
+# 6. Restart Ly to apply changes
+echo "==> [v33] Restarting Ly display manager..."
 sudo dinitctl restart ly || echo "    [!] Could not restart Ly automatically. Please reboot."
 
 echo ""
 echo "=================================================="
-echo "  [v32] OXWM Installed Successfully!              "
+echo "  [v33] OXWM Installed Successfully!              "
 echo "=================================================="
 echo ""
-echo "  Your custom dotfiles config has been applied."
+echo "  Alacritty and Rofi have been installed."
+echo "  Your custom OXWM and Rofi configs have been applied."
 echo "  You can now select 'OXWM' from the Ly login menu."
 echo ""
-echo "  Your configuration is at: ~/.config/oxwm/config.lua"
-echo "  Reload config with: Super + Shift + R"
+echo "  Reload OXWM config with: Super + Shift + R"
 echo "=================================================="
