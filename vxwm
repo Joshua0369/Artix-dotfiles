@@ -1,61 +1,99 @@
 #!/usr/bin/env bash
-# vxwm-dotfiles install script for Artix Linux with dinit
-# Based on the original Arch manual install, adapted for dinit & Artix packages.
+# vxwm-dotfiles installer for Artix Linux (dinit) — V2
+# Based on ceapeapea/vxwm-dotfiles, adapted for Artix dinit + user services.
+# Changelog V2:
+#   - Fix xorg package conflict (install xorg-server, not xorg group)
+#   - Add turnstile for dinit user service management
+#   - Add dbus-dinit-user for user dbus session
+#   - Soft-fail on optional packages / service enable
+#   - Split package install into core + desktop + optional tiers
 
 set -euo pipefail
 
 REPO_URL="https://github.com/ceapeapea/vxwm-dotfiles.git"
 DOTFILES_DIR="$HOME/dotfiles"
 
-echo "==> This script assumes: Artix Linux (dinit), X11, regular user with sudo."
+echo "==> vxwm-dotfiles installer V2 (Artix Linux / dinit / X11)"
 
+# ─────────────────────────────────────────────────────────────
 # 1. Clone repo
+# ─────────────────────────────────────────────────────────────
 if [[ ! -d "$DOTFILES_DIR" ]]; then
+    echo "==> Cloning dotfiles..."
     git clone "$REPO_URL" "$DOTFILES_DIR"
+else
+    echo "==> Dotfiles already exist at $DOTFILES_DIR, skipping clone."
 fi
 cd "$DOTFILES_DIR"
 
-# 2. Install packages
-#    Artix provides most Arch packages, but services are dinit packages.
-#    Some Arch-specific service packages (e.g. networkmanager) have -dinit variants.
-
-echo "==> Installing base X11 & build dependencies..."
+# ─────────────────────────────────────────────────────────────
+# 2. Core X11 + build deps (no xorg group — avoids tearfree conflict)
+# ─────────────────────────────────────────────────────────────
+echo "==> Installing core X11 + build dependencies..."
 sudo pacman -S --needed --noconfirm \
-    base-devel git pkgconf python-pip rsync make \
-    xorg xorg-xinit xorg-xrdb xorg-xsetroot xorg-xset xorg-xprop \
-    xorg-setxkbmap xorg-xrandr xdotool \
+    base-devel git pkgconf make rsync python-pip \
+    xorg-server xorg-xinit xorg-xrdb xorg-xsetroot \
+    xorg-xset xorg-xprop xorg-setxkbmap xorg-xrandr \
+    xdotool \
     libx11 libxft libxinerama \
-    libxcomposite libxdamage libxfixes libxrandr libdrm
+    libxcomposite libxdamage libxfixes libxrandr libdrm \
+    fontconfig freetype2
 
-echo "==> Installing desktop stack (Artix repos)..."
-# NOTE: On Artix, service packages are named *-dinit.
-# We install the main packages first; service packages separately below.
+# ─────────────────────────────────────────────────────────────
+# 3. dinit user-service infrastructure (turnstile + dbus)
+#    Without turnstile, dinitctl enable for user services fails.
+#    Ref: Artix Wiki Turnstile, Forum thread on dinit user services
+# ─────────────────────────────────────────────────────────────
+echo "==> Installing dinit user-session infrastructure..."
+sudo pacman -S --needed --noconfirm \
+    turnstile turnstile-dinit \
+    dbus-dinit-user || {
+    echo "!!! WARNING: turnstile/dbus-dinit-user installation failed."
+    echo "    User services (pipewire, wireplumber) will NOT auto-start."
+    echo "    Install them manually later: sudo pacman -S turnstile turnstile-dinit dbus-dinit-user"
+}
+
+# Enable turnstiled system service (provides dinit user instance on login)
+sudo dinitctl enable turnstiled 2>/dev/null || \
+    echo "!!! Could not enable turnstiled — enable manually: sudo dinitctl enable turnstiled"
+
+# ─────────────────────────────────────────────────────────────
+# 4. Desktop packages (split: essential first, optional soft-fail)
+# ─────────────────────────────────────────────────────────────
+echo "==> Installing desktop essentials..."
 sudo pacman -S --needed --noconfirm \
     kitty feh dmenu clipmenu stalonetray picom dunst libnotify \
-    thunar gvfs exo tumbler sxiv imagemagick xclip xsel swappy micro \
-    brightnessctl slock \
+    thunar gvfs exo tumbler sxiv imagemagick \
+    xclip xsel swappy micro brightnessctl slock \
     network-manager-applet \
     bluez bluez-utils blueman \
     libpulse pipewire pipewire-pulse pipewire-alsa pipewire-jack wireplumber \
     pavucontrol alsa-utils python-gobject gtk3 \
     udisks2 ntfs-3g xdg-user-dirs xdg-utils \
     ttf-dejavu ttf-liberation noto-fonts \
+    python-pywal
+
+echo "==> Installing optional fonts (soft-fail if unavailable)..."
+sudo pacman -S --needed --noconfirm \
     otf-atkinsonhyperlegiblemono-nerd \
-    ttf-jetbrains-mono-nerd ttf-firacode-nerd ttf-hack-nerd
+    ttf-jetbrains-mono-nerd ttf-firacode-nerd ttf-hack-nerd \
+    2>/dev/null || echo "    (some nerd fonts not found in repo, continuing)"
 
-echo "==> Installing pywal (Artix/Arch repo)..."
-sudo pacman -S --needed --noconfirm python-pywal
-
+# ─────────────────────────────────────────────────────────────
+# 5. dinit service packages (audio stack)
+# ─────────────────────────────────────────────────────────────
 echo "==> Installing dinit service packages..."
-# These provide dinit service files for the services the rice needs.
 sudo pacman -S --needed --noconfirm \
     networkmanager-dinit \
     bluez-dinit \
     pipewire-dinit \
     pipewire-pulse-dinit \
-    wireplumber-dinit
+    wireplumber-dinit \
+    || echo "!!! Some service packages failed — check names with: pacman -Ss dinit"
 
-# 3. Build vxwm
+# ─────────────────────────────────────────────────────────────
+# 6. Build vxwm
+# ─────────────────────────────────────────────────────────────
 echo "==> Building vxwm..."
 cd "$DOTFILES_DIR/vxwm"
 make clean && make
@@ -64,12 +102,14 @@ mkdir -p "$HOME/.local/bin"
 cp -f ./vxwm "$HOME/.local/bin/vxwm"
 chmod +x "$HOME/.local/bin/vxwm"
 
-# keep source tree for config edits
+# Preserve source tree for config edits
 mkdir -p "$HOME/vxwm"
 rsync -a --delete --exclude='*.o' --exclude='vxwm' --exclude='.git' \
     "$DOTFILES_DIR/vxwm/" "$HOME/vxwm/"
 
-# 4. Install configs & scripts
+# ─────────────────────────────────────────────────────────────
+# 7. Install configs
+# ─────────────────────────────────────────────────────────────
 echo "==> Installing configs..."
 mkdir -p "$HOME/.local/bin" "$HOME/.config"
 mkdir -p "$HOME/Pictures/Wallpapers" "$HOME/Pictures/Screenshots" "$HOME/.cache/clipmenu"
@@ -89,42 +129,48 @@ cp "$DOTFILES_DIR/.config/fontconfig/conf.d/"* "$HOME/.config/fontconfig/conf.d/
 cp "$DOTFILES_DIR/.xinitrc" "$HOME/.xinitrc" && chmod +x "$HOME/.xinitrc"
 cp "$DOTFILES_DIR/.stalonetrayrc" "$HOME/.stalonetrayrc"
 
-# Shell configs: back up existing then copy
+# Shell configs with backup
 [[ -f "$HOME/.bashrc" ]] && cp "$HOME/.bashrc" "$HOME/.bashrc.bak"
 cp "$DOTFILES_DIR/.bashrc" "$HOME/.bashrc"
-# If you use zsh, uncomment:
-# sudo pacman -S --needed zsh
-# [[ -f "$HOME/.zshrc" ]] && cp "$HOME/.zshrc" "$HOME/.zshrc.bak"
-# cp "$DOTFILES_DIR/.zshrc" "$HOME/.zshrc"
 
 cp -a "$DOTFILES_DIR/Pictures/Wallpapers/." "$HOME/Pictures/Wallpapers/" 2>/dev/null || true
 xdg-mime default thunar.desktop inode/directory 2>/dev/null || true
 
-# Ensure ~/.local/bin is in PATH (append to ~/.profile if missing)
+# Ensure ~/.local/bin in PATH
 if ! grep -q 'local/bin' "$HOME/.profile" 2>/dev/null; then
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.profile"
 fi
 
-# 5. Enable services with dinit
-echo "==> Enabling dinit services..."
-# System services (root)
-sudo dinitctl enable networkmanager
-sudo dinitctl enable bluetooth
+# ─────────────────────────────────────────────────────────────
+# 8. Enable services (soft-fail: don't abort on single failure)
+# ─────────────────────────────────────────────────────────────
+echo "==> Enabling system services (dinit)..."
+sudo dinitctl enable networkmanager 2>/dev/null || \
+    echo "    networkmanager enable failed — check: sudo dinitctl list"
+sudo dinitctl enable bluetooth 2>/dev/null || \
+    echo "    bluetooth enable failed — check: sudo dinitctl list"
 
-# User services: dinit user instance is typically managed by turnstile/dinit-user-spawn.
-# On Artix with dinit, enable user services via dinitctl as your user.
-# If turnstile is installed and running, these commands work.
-dinitctl enable pipewire
-dinitctl enable pipewire-pulse
-dinitctl enable wireplumber
+echo "==> Enabling user services (dinit --user, via turnstile)..."
+# These require turnstile to be running and user dinit instance active.
+# If turnstiled was just enabled, services may not be available until next login.
+for svc in pipewire pipewire-pulse wireplumber; do
+    dinitctl enable "$svc" 2>/dev/null || \
+        echo "    [skip] $svc — user dinit may not be active yet (turnstile)"
+done
 
-# 6. Final steps
+# ─────────────────────────────────────────────────────────────
+# 9. Final
+# ─────────────────────────────────────────────────────────────
 echo "==> Updating user dirs..."
-xdg-user-dirs-update
+xdg-user-dirs-update 2>/dev/null || true
 
-echo "==> Done."
-echo "Next:"
-echo "  1. Run: setwal ~/Pictures/Wallpapers/<your-image>"
-echo "  2. Start X with: startx"
-echo "  3. If bar font or colors are off, run: vxbuild && restart X"
-echo "  4. Check services: dinitctl list"
+echo ""
+echo "==> Done (V2)."
+echo ""
+echo "Next steps:"
+echo "  1. LOG OUT and LOG BACK IN (or reboot) — turnstile needs a fresh login"
+echo "     to start your dinit user instance and enable pipewire services."
+echo "  2. After login, verify user services: dinitctl --user list"
+echo "  3. Set wallpaper: setwal ~/Pictures/Wallpapers/<image>"
+echo "  4. Start X: startx"
+echo "  5. If bar colors/fonts are off: vxbuild && restart X"
