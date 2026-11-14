@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OXWM Direct Installer (v10 - GitHub Mirror for Lua)
+# OXWM Direct Installer (v11 - Ubuntu Mirror for Lua)
 # ==============================================================================
 
 set -Eeuo pipefail
 
 echo "=================================================="
-echo "    [v10] Installing OXWM (Directly from GitHub)  "
+echo "    [v11] Installing OXWM (Directly from GitHub)  "
 echo "=================================================="
 
 # 1. Ensure base dependencies are installed
-echo "==> [v10] Installing required build dependencies..."
+echo "==> [v11] Installing required build dependencies..."
 sudo pacman -S --needed --noconfirm base-devel git libx11 libxft freetype2 fontconfig libxinerama wget tar
 
 # 2. Setup a temporary workspace
@@ -18,7 +18,7 @@ TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
 # 3. Download the specific Zig version
-echo "==> [v10] Downloading compatible Zig compiler (0.14.0)..."
+echo "==> [v11] Downloading compatible Zig compiler (0.14.0)..."
 if ! wget -q --tries=3 --timeout=15 https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz; then
     echo "    [!] ERROR: Failed to download Zig compiler."
     exit 1
@@ -27,41 +27,41 @@ tar -xf zig-linux-x86_64-0.14.0.tar.xz
 ZIG_BIN="$TEMP_DIR/zig-linux-x86_64-0.14.0/zig"
 
 # 4. Clone OXWM
-echo "==> [v10] Cloning OXWM from Tony's GitHub..."
+echo "==> [v11] Cloning OXWM from Tony's GitHub..."
 if ! git clone https://github.com/tonybanters/oxwm.git; then
     echo "    [!] ERROR: Failed to clone OXWM repository."
     exit 1
 fi
 cd oxwm
 
-# 5. Pre-download Lua DIRECTLY INTO the oxwm folder from a GitHub Mirror
-echo "==> [v10] Pre-downloading Lua 5.4.8 via GitHub Mirror..."
-# We use a GitHub repo that mirrors the Lua source tarballs
-LUA_MIRROR="https://github.com/lua/lua/archive/refs/tags/v5.4.8.tar.gz"
-if ! wget -q --tries=3 --timeout=15 "$LUA_MIRROR" -O lua-5.4.8.tar.gz; then
-    echo "    [!] ERROR: Failed to download Lua from mirror."
+# 5. Pre-download Lua DIRECTLY INTO the oxwm folder from Ubuntu Mirror
+echo "==> [v11] Pre-downloading Lua 5.4.8 via Ubuntu Mirror..."
+# Use Ubuntu's source package mirror, which is stable and correctly structured
+LUA_MIRROR="http://mirror.techfak.net/ubuntu/pool/main/l/lua5.4/lua5.4_5.4.8.orig.tar.gz"
+if ! wget -q --tries=3 --timeout=20 "$LUA_MIRROR" -O lua-5.4.8.tar.gz; then
+    echo "    [!] ERROR: Failed to download Lua from Ubuntu mirror."
     exit 1
 fi
 
 # 6. PATCH THE BUILD SYSTEM (Point to relative local file)
-echo "==> [v10] Patching build.zig.zon to use local relative Lua file..."
+echo "==> [v11] Patching build.zig.zon to use local relative Lua file..."
 # Change the URL to the local relative path
 sed -i "s|.url = \"https://www.lua.org/ftp/lua-5.4.8.tar.gz\",|.path = \"./lua-5.4.8.tar.gz\",|" build.zig.zon
 
 # 7. Compile and Install
-echo "==> [v10] Compiling OXWM using Zig (ReleaseFast)..."
+echo "==> [v11] Compiling OXWM using Zig (ReleaseFast)..."
 if ! "$ZIG_BIN" build -Doptimize=ReleaseFast --prefix /usr; then
     echo "    [!] ERROR: Compilation failed."
     exit 1
 fi
 
 # 8. Cleanup
-echo "==> [v10] Cleaning up temporary build files..."
+echo "==> [v11] Cleaning up temporary build files..."
 cd ~
 rm -rf "$TEMP_DIR"
 
 # 9. Setup default configuration folder
-echo "==> [v10] Setting up OXWM configuration..."
+echo "==> [v11] Setting up OXWM configuration..."
 mkdir -p ~/.config/oxwm
 
 if command -v oxwm &> /dev/null; then
@@ -73,7 +73,7 @@ fi
 
 echo ""
 echo "=================================================="
-echo "  [v10] OXWM Installed Successfully!              "
+echo "  [v11] OXWM Installed Successfully!              "
 echo "=================================================="
 echo ""
 echo "  To start OXWM, add 'exec oxwm' to your ~/.xinitrc"
