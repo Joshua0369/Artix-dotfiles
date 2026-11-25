@@ -68,6 +68,19 @@ local blocks = {
         underline = false,
     }),
     oxwm.bar.block.shell({
+        format = "CPU: {}",
+        command = 'awk "{printf \\"%d°C\\", \\$1/1000; exit}" /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input',
+        interval = 10,
+        color = colors.green,
+        underline = true,
+    }),
+    oxwm.bar.block.static({
+        text = "│",
+        interval = 999999999,
+        color = colors.lavender,
+        underline = false,
+    }),
+    oxwm.bar.block.shell({
         format = "{}",
         command = "uname -r",
         interval = 999999999,
@@ -232,8 +245,17 @@ oxwm.bar.set_scheme_urgent(colors.red, colors.bg, colors.red)
 -- A list of available keysyms can be found in the X11 keysym definitions.
 -- Common keys: Return, Space, Tab, Escape, Backspace, Delete, Left, Right, Up, Down
 
-oxwm.key.bind({ modkey }, "B", oxwm.spawn({ "vivaldi-snapshot" }))
+oxwm.key.bind({}, "F5", oxwm.spawn("~/.config/oxwm/macros/key_fspam.py"))
+oxwm.key.bind({}, "F8", oxwm.spawn("~/.config/oxwm/macros/autoclicker.py"))
+oxwm.key.bind({}, "F6", oxwm.spawn("~.config/oxwm/macros/key_spammer.py"))
+oxwm.key.bind({}, "F7", oxwm.spawn("~/.config/oxwm/macros/key_qspam.py"))
+oxwm.key.bind({}, "F9", oxwm.spawn("~/.config/oxwm/macros/key_flowers.py"))
+oxwm.key.bind({}, "F10", oxwm.spawn("~/.config/oxwm/macros/key_flowers_backwards.py"))
+oxwm.key.bind({}, "F4", oxwm.spawn("~/.config/oxwm/macros/full_bow.py"))
+
+oxwm.key.bind({ modkey }, "B", oxwm.spawn({ "vivaldi" }))
 oxwm.key.bind({ modkey }, "E", oxwm.spawn({ "thunar" }))
+
 
 -- Basic window management
 
@@ -244,17 +266,17 @@ oxwm.key.bind({ modkey }, "space", oxwm.spawn({ "sh", "-c", "rofi -show drun" })
 oxwm.key.bind({ modkey }, "S", oxwm.spawn({ "sh", "-c", "maim -s | xclip -selection clipboard -t image/png" }))
 oxwm.key.bind({ modkey }, "Q", oxwm.client.kill())
 
-oxwm.key.bind({}, "XF86MonBrightnessUp", oxwm.spawn({ "brightnessctl", "set", "+1%" }))
-oxwm.key.bind({}, "XF86MonBrightnessDown", oxwm.spawn({ "brightnessctl", "set", "1%-" }))
+oxwm.key.bind({}, "XF86MonBrightnessUp", oxwm.spawn("/home/j/.local/bin/change-brightness.sh +1%"))
+oxwm.key.bind({}, "XF86MonBrightnessDown", oxwm.spawn("/home/j/.local/bin/change-brightness.sh 1%-"))
 
 -- Volume Up (5%)
-oxwm.key.bind({}, "XF86AudioRaiseVolume", oxwm.spawn({ "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%+" }))
+oxwm.key.bind({}, "XF86AudioRaiseVolume", oxwm.spawn("/home/j/.local/bin/change-volume.sh raise 5%"))
 
 -- Volume Down (5%)
-oxwm.key.bind({}, "XF86AudioLowerVolume", oxwm.spawn({ "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%-" }))
+oxwm.key.bind({}, "XF86AudioLowerVolume", oxwm.spawn("/home/j/.local/bin/change-volume.sh lower 5%"))
 
 -- Mute Toggle
-oxwm.key.bind({}, "XF86AudioMute", oxwm.spawn({ "wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle" }))
+oxwm.key.bind({}, "XF86AudioMute", oxwm.spawn("/home/j/.local/bin/change-volume.sh mute"))
 
 -- Keybind overlay - Shows important keybindings on screen
 oxwm.key.bind({ modkey, "Shift" }, "Slash", oxwm.show_keybinds())
@@ -397,5 +419,5 @@ oxwm.key.chord({
 
 -- oxwm.autostart("picom")
 -- oxwm.autostart("feh --bg-scale ~/wallpaper.jpg")
--- oxwm.autostart("dunst")
+oxwm.autostart("dunst")
 -- oxwm.autostart("nm-applet")
